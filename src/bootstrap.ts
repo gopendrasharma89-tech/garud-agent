@@ -1,0 +1,239 @@
+import { AgentRuntime } from './agent/agent-runtime.js';
+import { BrainProvider } from './brain/brain.js';
+import { DeterministicBrain } from './brain/deterministic-brain.js';
+import { OpenAiBrain } from './brain/openai-brain.js';
+import { ToolCache } from './cache/tool-cache.js';
+import { BroadcastChannel, ConsoleChannel, InMemoryChannel } from './channels/channel.js';
+import { ConversationStore } from './conversation/conversation-store.js';
+import { AuditLogger, InMemoryAuditLog } from './core/audit-log.js';
+import { MemoryStore } from './core/memory-store.js';
+import { PairingStore } from './core/pairing-store.js';
+import { PolicyEngine } from './core/policy-engine.js';
+import { RateLimiter } from './core/rate-limiter.js';
+import { SessionStore } from './core/session-store.js';
+import { ToolRegistry } from './core/tool-registry.js';
+import { Gateway } from './gateway.js';
+import { MetricsRegistry } from './metrics/registry.js';
+import { PluginLoader } from './plugins/plugin-loader.js';
+import { ToolQuotaManager } from './quotas/tool-quota.js';
+import { CronScheduler } from './scheduler/cron.js';
+import { SkillsLoader } from './skills/skills-loader.js';
+import { JsonFileStore } from './storage/json-store.js';
+import { buildBuiltinTools } from './tools/builtin-tools.js';
+import { AppConfig, Logger } from './types.js';
+import { createLogger } from './utils/logger.js';
+
+export interface BootstrapResult {
+  gateway: Gateway;
+  runtime: AgentRuntime;
+  tools: ToolRegistry;
+  policy: PolicyEngine;
+  audit: AuditLogger;
+  pairing?: PairingStore;
+  cache?: ToolCache;
+  quotas?: ToolQuotaManager;
+  conversation?: ConversationStore;
+  metrics?: MetricsRegistry;
+  inMemoryChannel: InMemoryChannel;
+  consoleChannel: ConsoleChannel;
+  broadcastChannel: BroadcastChannel;
+  store?: JsonFileStore;
+  skills: SkillsLoader;
+  scheduler?: CronScheduler;
+  logger: Logger;
+}
+
+export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
+  const logger = createLogger({
+    level: config.logging.level,
+    json: config.logging.json,
+    redactKeys: config.logging.redactKeys
+  });
+
+  const memories = new MemoryStore({
+    maxPerSession: config.agent.memoryLimit,
+    dedupThreshold: config.memory.dedupThreshold
+  });
+  const sessions = new SessionStore({ defaultAgentId: config.agent.defaultId });
+  const policy = new PolicyEngine({ rules: config.policy.rules });
+  const tools = new ToolRegistry();
+  for (const tool of buildBuiltinTools({ memories })) tools.register(tool);
+
+  if (config.plugins?.length) {
+    const loader = new PluginLoader(memories, logger.child('plugins'));
+    const plugins = await loader.loadAll(config.plugins, config.storage.workspaceDir);
+    for (const plugin of plugins) {
+      for (const tool of plugin.tools) {
+        try { tools.register(tool); } catch (error) {
+          logger.warn('plugin tool conflict', {
+            plugin: plugin.id,
+            tool: tool.name,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    }
+  }
+
+  const skills = new SkillsLoader(config.skillsDir);
+  if (config.hotReload) skills.watchForChanges();
+
+  const cache = config.cache.enabled
+    ? new ToolCache({
+        enabled: true,
+        ttlMs: config.cache.ttlMs,
+        maxEntries: config.cache.maxEntries
+      })
+    : undefined;
+
+  const metrics = config.metrics.enabled ? new MetricsRegistry() : undefined;
+
+  const conversation = config.conversation.maxTurns > 0
+    ? new ConversationStore({ maxTurns: config.conversation.maxTurns })
+    : undefined;
+
+  const quotas = config.quotas.defaultDailyLimit > 0
+    ? new ToolQuotaManager({ defaultLimit: config.quotas.defaultDailyLimit })
+    : new ToolQuotaManager();
+
+  const brain = buildBrain(config);
+
+  const audit = new AuditLogger();
+  const inMemoryAudit = new InMemoryAuditLog();
+  audit.addSink(inMemoryAudit);
+
+  let store: JsonFileStore | undefined;
+  if (config.storage.persistent) {
+    store = new JsonFileStore(config.storage.workspaceDir);
+    await store.ensureWorkspace();
+    audit.addSink(store.fileSink());
+  }
+
+  const rateLimiter = config.rateLimit.enabled
+    ? new RateLimiter({
+        enabled: true,
+        windowMs: config.rateLimit.windowMs,
+        maxRequests: config.rateLimit.maxRequests
+      })
+    : undefined;
+
+  const pairing = config.pairing.enabled
+    ? new PairingStore({ codeTtlMs: config.pairing.codeTtlMs })
+    : undefined;
+
+  const runtime = new AgentRuntime(brain, memories, tools, policy, {
+    maxToolsPerTurn: config.agent.maxToolsPerTurn,
+    toolTimeoutMs: config.agent.toolTimeoutMs,
+    maxToolResultChars: config.agent.maxToolResultChars,
+    contextTurns: config.conversation.contextTurns,
+    persona: config.agent.persona,
+    logger: logger.child('runtime'),
+    audit,
+    cache,
+    quotas,
+    conversation,
+    metrics,
+    skillsLoader: (input) => skills.match(input, 2)
+  });
+
+  const gateway = new Gateway(runtime, {
+    sessions,
+    memories,
+    tools,
+    policy,
+    rateLimiter,
+    audit,
+    store,
+    pairing,
+    cache,
+    quotas,
+    conversation,
+    metrics,
+    logger: logger.child('gateway'),
+    autoPersist: config.storage.persistent
+  });
+
+  if (store) await gateway.loadFromDisk();
+
+  const inMemoryChannel = new InMemoryChannel('http');
+  const consoleChannel = new ConsoleChannel('console');
+  const broadcastChannel = new BroadcastChannel('broadcast');
+  gateway.upsertChannel(inMemoryChannel);
+  gateway.upsertChannel(consoleChannel);
+  gateway.upsertChannel(broadcastChannel);
+
+  let scheduler: CronScheduler | undefined;
+  if (config.scheduler.enabled) {
+    scheduler = new CronScheduler(logger);
+    scheduler.add({
+      id: 'heartbeat',
+      interval: config.scheduler.heartbeatMs,
+      task: async ({ now, log }) => {
+        log.debug('heartbeat', { stats: gateway.getStats(), now });
+        await audit.record('cron', { id: 'heartbeat', stats: gateway.getStats() });
+      }
+    });
+    if (config.scheduler.sessionTtlMs > 0) {
+      scheduler.add({
+        id: 'session-prune',
+        interval: Math.max(60_000, config.scheduler.heartbeatMs),
+        task: async ({ log }) => {
+          const removed = sessions.pruneIdle(config.scheduler.sessionTtlMs);
+          if (removed > 0) {
+            log.info('pruned idle sessions', { removed });
+            await audit.record('cron', { id: 'session-prune', removed });
+          }
+        }
+      });
+    }
+    scheduler.add({
+      id: 'memory-prune',
+      interval: Math.max(60_000, config.scheduler.heartbeatMs),
+      task: async ({ log }) => {
+        const removed = memories.pruneExpired();
+        if (removed > 0) {
+          log.info('pruned expired memories', { removed });
+          await audit.record('cron', { id: 'memory-prune', removed });
+        }
+      }
+    });
+    // Persist via cron only if autoPersist is OFF — avoid double writes.
+    if (store && !config.storage.persistent) {
+      scheduler.add({
+        id: 'persist',
+        interval: Math.max(30_000, config.scheduler.heartbeatMs),
+        task: async ({ log }) => {
+          try {
+            await gateway.persist();
+          } catch (error) {
+            log.warn('persist cron failed', {
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+      });
+    }
+  }
+
+  return {
+    gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
+    inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger
+  };
+}
+
+function buildBrain(config: AppConfig): BrainProvider {
+  if (config.brain.provider === 'openai-compatible'
+      && config.brain.apiBase && config.brain.apiKey && config.brain.model) {
+    return new OpenAiBrain({
+      apiBase: config.brain.apiBase,
+      apiKey: config.brain.apiKey,
+      model: config.brain.model,
+      temperature: config.brain.temperature,
+      timeoutMs: config.brain.requestTimeoutMs,
+      failureThreshold: config.brain.failureThreshold,
+      cooldownMs: config.brain.cooldownMs,
+      extraHeaders: config.brain.extraHeaders
+    });
+  }
+  return new DeterministicBrain();
+}

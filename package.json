@@ -1,0 +1,60 @@
+{
+  "name": "garud-agent",
+  "version": "0.8.0",
+  "description": "Local-first policy-aware multi-channel agent gateway with pluggable LLM brains, persistent memory with pinning/TTL/dedup, tools with quotas, scheduler, pairing, plugins, skills, WebSocket, signed webhooks, dashboard, Prometheus metrics, conversation history, replay, REPL CLI, and 320+ tests. Inspired by OpenClaw, rebuilt from scratch.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "garud": "dist/cli/main.js",
+    "garud-agent": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist coverage",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "cli": "tsx src/cli/main.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "doctor": "tsx src/cli/main.ts doctor",
+    "repl": "tsx src/cli/main.ts repl",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "snapshot": "tsx src/cli/main.ts snapshot",
+    "restore": "tsx src/cli/main.ts restore"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "workspace"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "ai",
+    "local-first",
+    "multi-channel",
+    "openclaw",
+    "policy",
+    "gateway",
+    "llm",
+    "websocket",
+    "scheduler",
+    "plugins",
+    "metrics",
+    "circuit-breaker",
+    "quotas",
+    "pinning"
+  ]
+}
