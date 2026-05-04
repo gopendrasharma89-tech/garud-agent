@@ -1,6 +1,6 @@
 {
   "name": "garud-agent",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Local-first policy-aware multi-channel agent gateway with pluggable LLM brains, persistent memory with pinning/TTL/dedup, tools with quotas, scheduler, pairing, plugins, skills, WebSocket, signed webhooks, dashboard, Prometheus metrics, conversation history, replay, REPL CLI, and 320+ tests. Inspired by OpenClaw, rebuilt from scratch.",
   "type": "module",
   "main": "dist/index.js",

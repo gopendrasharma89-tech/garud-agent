@@ -967,7 +967,7 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     {
       name: 'array.intersect',
-      description: 'Intersection of two JSON arrays (preserves order from left). Input: "<a>::<b>".',
+      description: 'Intersection of two JSON arrays (type-aware, preserves order from left). Input: "<a>::<b>".',
       tags: ['read', 'safe'],
       execute: (input) => {
         const sep = input.indexOf('::');
@@ -976,8 +976,10 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           const a = JSON.parse(input.slice(0, sep));
           const b = JSON.parse(input.slice(sep + 2));
           if (!Array.isArray(a) || !Array.isArray(b)) return { content: 'array.intersect: both must be arrays', error: true };
-          const bSet = new Set(b.map((x) => typeof x === 'object' ? JSON.stringify(x) : String(x)));
-          const out = a.filter((x) => bSet.has(typeof x === 'object' ? JSON.stringify(x) : String(x)));
+          // Type-aware key: include type prefix to avoid 1 vs "1" collision.
+          const keyOf = (x: unknown) => `${typeof x}:${typeof x === 'object' ? JSON.stringify(x) : String(x)}`;
+          const bSet = new Set(b.map(keyOf));
+          const out = a.filter((x) => bSet.has(keyOf(x)));
           return { content: JSON.stringify(out) };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -987,7 +989,7 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     {
       name: 'array.diff',
-      description: 'Items in left not in right. Input: "<a>::<b>".',
+      description: 'Items in left not in right (type-aware). Input: "<a>::<b>".',
       tags: ['read', 'safe'],
       execute: (input) => {
         const sep = input.indexOf('::');
@@ -996,8 +998,9 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           const a = JSON.parse(input.slice(0, sep));
           const b = JSON.parse(input.slice(sep + 2));
           if (!Array.isArray(a) || !Array.isArray(b)) return { content: 'array.diff: both must be arrays', error: true };
-          const bSet = new Set(b.map((x) => typeof x === 'object' ? JSON.stringify(x) : String(x)));
-          const out = a.filter((x) => !bSet.has(typeof x === 'object' ? JSON.stringify(x) : String(x)));
+          const keyOf = (x: unknown) => `${typeof x}:${typeof x === 'object' ? JSON.stringify(x) : String(x)}`;
+          const bSet = new Set(b.map(keyOf));
+          const out = a.filter((x) => !bSet.has(keyOf(x)));
           return { content: JSON.stringify(out) };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
@@ -1007,30 +1010,30 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     {
       name: 'text.padLeft',
-      description: 'Pad string on left. Input: "<text>::<width>::<char>" (char optional, default " ").',
+      description: 'Pad string on left. Input: "<text>::<width>::<pad>" — pad supports multi-char patterns.',
       tags: ['read', 'safe'],
       execute: (input) => {
         const parts = input.split('::');
-        if (parts.length < 2) return { content: 'text.padLeft: needs <text>::<width>[::<char>]', error: true };
+        if (parts.length < 2) return { content: 'text.padLeft: needs <text>::<width>[::<pad>]', error: true };
         const text = parts[0]!;
         const width = parseInt(parts[1]!, 10);
-        const ch = parts[2] || ' ';
+        const pad = parts[2] !== undefined && parts[2] !== '' ? parts[2] : ' ';
         if (!Number.isFinite(width) || width < 0 || width > 10_000) return { content: 'text.padLeft: invalid width', error: true };
-        return { content: text.padStart(width, ch.charAt(0) || ' ') };
+        return { content: text.padStart(width, pad) };
       }
     },
     {
       name: 'text.padRight',
-      description: 'Pad string on right. Input: "<text>::<width>::<char>".',
+      description: 'Pad string on right. Input: "<text>::<width>::<pad>" — pad supports multi-char patterns.',
       tags: ['read', 'safe'],
       execute: (input) => {
         const parts = input.split('::');
-        if (parts.length < 2) return { content: 'text.padRight: needs <text>::<width>[::<char>]', error: true };
+        if (parts.length < 2) return { content: 'text.padRight: needs <text>::<width>[::<pad>]', error: true };
         const text = parts[0]!;
         const width = parseInt(parts[1]!, 10);
-        const ch = parts[2] || ' ';
+        const pad = parts[2] !== undefined && parts[2] !== '' ? parts[2] : ' ';
         if (!Number.isFinite(width) || width < 0 || width > 10_000) return { content: 'text.padRight: invalid width', error: true };
-        return { content: text.padEnd(width, ch.charAt(0) || ' ') };
+        return { content: text.padEnd(width, pad) };
       }
     },
     {
@@ -1114,10 +1117,11 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     {
       name: 'validate.email',
-      description: 'Validate email syntax. Returns "true" / "false".',
+      description: 'Validate email syntax (RFC-5322 lite). Returns "true" / "false".',
       tags: ['read', 'safe'],
       execute: (input) => {
-        const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+        // Stricter: requires alpha local part, valid domain labels, TLD >= 2 alpha.
+        const re = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
         return { content: String(re.test(input.trim())) };
       }
     },
@@ -1143,6 +1147,226 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           if (n < 0 || n > 255) return { content: 'false' };
         }
         return { content: 'true' };
+      }
+    },
+    {
+      name: 'array.shuffle',
+      description: 'Fisher-Yates shuffle of a JSON array using crypto-secure randomness.',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        try {
+          const arr = JSON.parse(input);
+          if (!Array.isArray(arr)) return { content: 'array.shuffle: not an array', error: true };
+          const out = [...arr];
+          for (let i = out.length - 1; i > 0; i--) {
+            const j = randomInt(0, i + 1);
+            [out[i], out[j]] = [out[j], out[i]];
+          }
+          return { content: JSON.stringify(out) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `array.shuffle error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'array.head',
+      description: 'First N items of a JSON array. Input: "<json>::<n>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.lastIndexOf('::');
+        if (sep === -1) return { content: 'array.head: needs <json>::<n>', error: true };
+        const tail = input.slice(sep + 2).trim();
+        const n = parseInt(tail, 10);
+        if (!/^\d+$/.test(tail) || n < 0) return { content: 'array.head: invalid n', error: true };
+        try {
+          const arr = JSON.parse(input.slice(0, sep));
+          if (!Array.isArray(arr)) return { content: 'array.head: not an array', error: true };
+          return { content: JSON.stringify(arr.slice(0, n)) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `array.head error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'array.tail',
+      description: 'Last N items of a JSON array. Input: "<json>::<n>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.lastIndexOf('::');
+        if (sep === -1) return { content: 'array.tail: needs <json>::<n>', error: true };
+        const tail = input.slice(sep + 2).trim();
+        const n = parseInt(tail, 10);
+        if (!/^\d+$/.test(tail) || n < 0) return { content: 'array.tail: invalid n', error: true };
+        try {
+          const arr = JSON.parse(input.slice(0, sep));
+          if (!Array.isArray(arr)) return { content: 'array.tail: not an array', error: true };
+          return { content: JSON.stringify(arr.slice(-n)) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `array.tail error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'text.split',
+      description: 'Split text by separator. Input: "<text>::<sep>". Returns JSON array.',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'text.split: needs <text>::<sep>', error: true };
+        const text = input.slice(0, sep);
+        const separator = input.slice(sep + 2);
+        if (separator === '') return { content: JSON.stringify([...text]) };
+        return { content: JSON.stringify(text.split(separator)) };
+      }
+    },
+    {
+      name: 'text.join',
+      description: 'Join JSON array with separator. Input: "<json>::<sep>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'text.join: needs <json>::<sep>', error: true };
+        try {
+          const arr = JSON.parse(input.slice(0, sep));
+          if (!Array.isArray(arr)) return { content: 'text.join: not an array', error: true };
+          return { content: arr.map((x) => typeof x === 'string' ? x : JSON.stringify(x)).join(input.slice(sep + 2)) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `text.join error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'text.between',
+      description: 'Extract substring between two markers. Input: "<text>::<start>::<end>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const parts = input.split('::');
+        if (parts.length < 3) return { content: 'text.between: needs <text>::<start>::<end>', error: true };
+        // Re-join when text contains ::
+        const end = parts[parts.length - 1]!;
+        const start = parts[parts.length - 2]!;
+        const text = parts.slice(0, -2).join('::');
+        const i = text.indexOf(start);
+        if (i === -1) return { content: '' };
+        const j = text.indexOf(end, i + start.length);
+        if (j === -1) return { content: '' };
+        return { content: text.slice(i + start.length, j) };
+      }
+    },
+    {
+      name: 'text.replaceAll',
+      description: 'Global string replace (literal). Input: "<text>::<find>::<replace>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const parts = input.split('::');
+        if (parts.length < 3) return { content: 'text.replaceAll: needs <text>::<find>::<replace>', error: true };
+        const replace = parts[parts.length - 1]!;
+        const find = parts[parts.length - 2]!;
+        const text = parts.slice(0, -2).join('::');
+        if (find === '') return { content: text };
+        return { content: text.split(find).join(replace) };
+      }
+    },
+    {
+      name: 'text.escapeHtml',
+      description: 'Escape HTML special chars (&, <, >, ", \').',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const escaped = input
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        return { content: escaped };
+      }
+    },
+    {
+      name: 'text.unescapeHtml',
+      description: 'Unescape HTML entities (&amp; &lt; &gt; &quot; &#39; &apos;).',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const out = input
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&apos;/g, "'")
+          .replace(/&amp;/g, '&');
+        return { content: out };
+      }
+    },
+    {
+      name: 'math.percentile',
+      description: 'N-th percentile (0-100) of a numeric JSON array. Input: "<json>::<p>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.lastIndexOf('::');
+        if (sep === -1) return { content: 'math.percentile: needs <json>::<p>', error: true };
+        const p = Number(input.slice(sep + 2));
+        if (!Number.isFinite(p) || p < 0 || p > 100) return { content: 'math.percentile: p must be 0-100', error: true };
+        try {
+          const arr = JSON.parse(input.slice(0, sep));
+          if (!Array.isArray(arr) || arr.length === 0) return { content: 'math.percentile: empty or non-array', error: true };
+          const nums = arr.map(Number);
+          if (nums.some((n) => !Number.isFinite(n))) return { content: 'math.percentile: non-numeric', error: true };
+          const sorted = [...nums].sort((a, b) => a - b);
+          if (sorted.length === 1) return { content: String(sorted[0]) };
+          const rank = (p / 100) * (sorted.length - 1);
+          const lo = Math.floor(rank);
+          const hi = Math.ceil(rank);
+          if (lo === hi) return { content: String(sorted[lo]) };
+          const value = sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (rank - lo);
+          return { content: String(value) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `math.percentile error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'math.gcd',
+      description: 'Greatest common divisor of two integers. Input: "<a>::<b>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'math.gcd: needs <a>::<b>', error: true };
+        const a = parseInt(input.slice(0, sep).trim(), 10);
+        const b = parseInt(input.slice(sep + 2).trim(), 10);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return { content: 'math.gcd: invalid integers', error: true };
+        let x = Math.abs(a), y = Math.abs(b);
+        while (y !== 0) { [x, y] = [y, x % y]; }
+        return { content: String(x) };
+      }
+    },
+    {
+      name: 'math.lcm',
+      description: 'Least common multiple of two integers. Input: "<a>::<b>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'math.lcm: needs <a>::<b>', error: true };
+        const a = parseInt(input.slice(0, sep).trim(), 10);
+        const b = parseInt(input.slice(sep + 2).trim(), 10);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) return { content: 'math.lcm: invalid integers', error: true };
+        if (a === 0 || b === 0) return { content: '0' };
+        let x = Math.abs(a), y = Math.abs(b);
+        const product = x * y;
+        while (y !== 0) { [x, y] = [y, x % y]; }
+        return { content: String(product / x) };
+      }
+    },
+    {
+      name: 'uuid.validate',
+      description: 'Validate UUID v4 syntax. Returns "true" / "false".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return { content: String(re.test(input.trim())) };
       }
     },
     {
