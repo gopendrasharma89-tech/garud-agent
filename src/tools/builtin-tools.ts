@@ -1157,16 +1157,130 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         try {
           const arr = JSON.parse(input);
           if (!Array.isArray(arr)) return { content: 'array.shuffle: not an array', error: true };
+          if (arr.length < 2) return { content: JSON.stringify(arr) };
           const out = [...arr];
           for (let i = out.length - 1; i > 0; i--) {
             const j = randomInt(0, i + 1);
-            [out[i], out[j]] = [out[j], out[i]];
+            const tmp = out[i];
+            out[i] = out[j] as unknown;
+            out[j] = tmp as unknown;
           }
           return { content: JSON.stringify(out) };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           return { content: `array.shuffle error: ${msg}`, error: true };
         }
+      }
+    },
+    {
+      name: 'array.groupBy',
+      description: 'Group items by a JSON path key. Input: "<json-array>::<path>".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const sep = input.lastIndexOf('::');
+        if (sep === -1) return { content: 'array.groupBy: needs <json-array>::<path>', error: true };
+        try {
+          const arr = JSON.parse(input.slice(0, sep));
+          const path = input.slice(sep + 2).trim();
+          if (!Array.isArray(arr)) return { content: 'array.groupBy: not an array', error: true };
+          const groups: Record<string, unknown[]> = {};
+          for (const item of arr) {
+            let v: unknown = item;
+            for (const part of path.split('.')) {
+              if (v && typeof v === 'object' && part in (v as Record<string, unknown>)) {
+                v = (v as Record<string, unknown>)[part];
+              } else { v = undefined; break; }
+            }
+            const key = v === undefined || v === null ? '_null' : String(v);
+            (groups[key] ??= []).push(item);
+          }
+          return { content: JSON.stringify(groups) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `array.groupBy error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'text.title',
+      description: 'Title-case text (capitalize first letter of each word).',
+      tags: ['read', 'safe'],
+      execute: (input) => ({
+        content: input.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+      })
+    },
+    {
+      name: 'text.camel',
+      description: 'Convert text to camelCase.',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const parts = input.trim().split(/[\s_\-]+/).filter(Boolean);
+        if (parts.length === 0) return { content: '' };
+        const out = parts[0]!.toLowerCase()
+          + parts.slice(1).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+        return { content: out };
+      }
+    },
+    {
+      name: 'text.snake',
+      description: 'Convert text to snake_case.',
+      tags: ['read', 'safe'],
+      execute: (input) => ({
+        content: input.trim()
+          .replace(/([a-z])([A-Z])/g, '$1_$2')
+          .replace(/[\s\-]+/g, '_')
+          .toLowerCase()
+      })
+    },
+    {
+      name: 'text.kebab',
+      description: 'Convert text to kebab-case.',
+      tags: ['read', 'safe'],
+      execute: (input) => ({
+        content: input.trim()
+          .replace(/([a-z])([A-Z])/g, '$1-$2')
+          .replace(/[\s_]+/g, '-')
+          .toLowerCase()
+      })
+    },
+    {
+      name: 'math.factorial',
+      description: 'Compute factorial n! for 0 <= n <= 170 (returns Infinity beyond).',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const n = parseInt(input.trim(), 10);
+        if (!Number.isFinite(n) || n < 0 || n > 1000) return { content: 'math.factorial: invalid n (0-1000)', error: true };
+        let result = 1;
+        for (let i = 2; i <= n; i++) result *= i;
+        return { content: String(result) };
+      }
+    },
+    {
+      name: 'math.fibonacci',
+      description: 'N-th Fibonacci number (0-indexed). Supports n up to 1476.',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const n = parseInt(input.trim(), 10);
+        if (!Number.isFinite(n) || n < 0 || n > 1476) return { content: 'math.fibonacci: invalid n (0-1476)', error: true };
+        if (n < 2) return { content: String(n) };
+        let a = 0, b = 1;
+        for (let i = 2; i <= n; i++) { const t = a + b; a = b; b = t; }
+        return { content: String(b) };
+      }
+    },
+    {
+      name: 'math.isPrime',
+      description: 'Check whether N is prime. Returns "true" / "false".',
+      tags: ['read', 'safe'],
+      execute: (input) => {
+        const n = parseInt(input.trim(), 10);
+        if (!Number.isFinite(n)) return { content: 'math.isPrime: invalid input', error: true };
+        if (n < 2) return { content: 'false' };
+        if (n < 4) return { content: 'true' };
+        if (n % 2 === 0) return { content: 'false' };
+        const limit = Math.floor(Math.sqrt(n));
+        for (let i = 3; i <= limit; i += 2) if (n % i === 0) return { content: 'false' };
+        return { content: 'true' };
       }
     },
     {
