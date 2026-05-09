@@ -18,6 +18,13 @@ import { PluginLoader } from './plugins/plugin-loader.js';
 import { ToolQuotaManager } from './quotas/tool-quota.js';
 import { CronScheduler } from './scheduler/cron.js';
 import { SkillsLoader } from './skills/skills-loader.js';
+import { LongTermMemory } from './longterm/longterm-memory.js';
+import { DailyLog } from './longterm/daily-log.js';
+import { SubAgentRunner } from './subagent/subagent-runner.js';
+import { NodeRegistry } from './nodes/node-registry.js';
+import { HookRunner } from './hooks/hook-runner.js';
+import { ContextCompactor } from './compaction/context-compactor.js';
+import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
 import { AppConfig, Logger } from './types.js';
@@ -41,6 +48,12 @@ export interface BootstrapResult {
   skills: SkillsLoader;
   scheduler?: CronScheduler;
   logger: Logger;
+  longterm: LongTermMemory;
+  dailyLog: DailyLog;
+  subagent: SubAgentRunner;
+  nodes: NodeRegistry;
+  hooks: HookRunner;
+  compactor: ContextCompactor;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -56,8 +69,24 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   });
   const sessions = new SessionStore({ defaultAgentId: config.agent.defaultId });
   const policy = new PolicyEngine({ rules: config.policy.rules });
+  // ===== OpenClaw-inspired v2.0 subsystems =====
+  const longterm = new LongTermMemory(path.join(config.storage.workspaceDir, 'MEMORY.md'));
+  const dailyLog = new DailyLog(path.join(config.storage.workspaceDir, 'logs'));
+  const nodes = new NodeRegistry();
+  const compactor = new ContextCompactor();
+
   const tools = new ToolRegistry();
-  for (const tool of buildBuiltinTools({ memories })) tools.register(tool);
+  // SubAgent + skills are registered after AgentRuntime is constructed below;
+  // builtin tools see them via the deps closure (mutable refs).
+  const lazyDeps: { subagent?: SubAgentRunner; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
+  for (const tool of buildBuiltinTools({
+    memories,
+    longterm,
+    dailyLog,
+    nodes,
+    get subagent() { return lazyDeps.subagent; },
+    get skillsLoader() { return lazyDeps.skillsRef; }
+  } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
   if (config.plugins?.length) {
     const loader = new PluginLoader(memories, logger.child('plugins'));
@@ -77,6 +106,15 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
 
   const skills = new SkillsLoader(config.skillsDir);
   if (config.hotReload) skills.watchForChanges();
+  // OpenClaw-style lazy skill access: tools see metadata + read-on-demand.
+  lazyDeps.skillsRef = {
+    list: () => (skills as unknown as { skills: Array<{ name: string; content: string }> }).skills.map((s) => ({
+      name: s.name,
+      description: s.content.split('\n').find((l) => l.trim().length > 0)?.slice(0, 200) ?? '',
+      tags: ['skill']
+    })),
+    read: (name) => (skills as unknown as { skills: Array<{ name: string; content: string }> }).skills.find((s) => s.name === name)?.content
+  };
 
   const cache = config.cache.enabled
     ? new ToolCache({
@@ -136,6 +174,13 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     skillsLoader: (input) => skills.match(input, 2)
   });
 
+  // Sub-agent runner needs the runtime, registered post-construction.
+  const subagent = new SubAgentRunner(runtime, 4, logger.child('subagent'));
+  lazyDeps.subagent = subagent;
+
+  // Hook runner wired to the gateway's event bus (created below).
+  // We instantiate it after the gateway so it has access to its bus.
+
   const gateway = new Gateway(runtime, {
     sessions,
     memories,
@@ -154,6 +199,19 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   });
 
   if (store) await gateway.loadFromDisk();
+
+  // Hook runner wired to the gateway event bus.
+  const hooks = new HookRunner(
+    { on: (event, handler) => gateway.events.on(event as Parameters<typeof gateway.events.on>[0], handler as never) },
+    logger.child('hooks')
+  );
+  // Hold a reference so the variable is always considered used.
+  void hooks;
+  void compactor;
+
+  // Daily-log hook: append every received/replied event to today's daily log.
+  gateway.events.on('received', (e) => { void dailyLog.append('user', e.text, { sessionChannel: e.channel, userId: e.userId }); });
+  gateway.events.on('replied', (e) => { void dailyLog.append('assistant', e.text, { sessionId: e.sessionId }); });
 
   const inMemoryChannel = new InMemoryChannel('http');
   const consoleChannel = new ConsoleChannel('console');
@@ -217,7 +275,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
 
   return {
     gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
-    inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger
+    inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
+    longterm, dailyLog, subagent, nodes, hooks, compactor
   };
 }
 

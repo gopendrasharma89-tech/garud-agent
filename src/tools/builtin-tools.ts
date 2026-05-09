@@ -9,6 +9,11 @@ export interface BuiltinToolDeps {
   memories: MemoryStore;
   fetchTimeoutMs?: number;
   fetchMaxBytes?: number;
+  longterm?: import('../longterm/longterm-memory.js').LongTermMemory;
+  dailyLog?: import('../longterm/daily-log.js').DailyLog;
+  subagent?: import('../subagent/subagent-runner.js').SubAgentRunner;
+  nodes?: import('../nodes/node-registry.js').NodeRegistry;
+  skillsLoader?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined };
 }
 
 export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
@@ -1281,6 +1286,148 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         const limit = Math.floor(Math.sqrt(n));
         for (let i = 3; i <= limit; i += 2) if (n % i === 0) return { content: 'false' };
         return { content: 'true' };
+      }
+    },
+    // ===== OpenClaw-inspired v2.0 tools =====
+    {
+      name: 'longterm.read',
+      description: 'Read the long-term MEMORY.md file (durable cross-session facts).',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async () => {
+        if (!deps.longterm) return { content: 'longterm.read: not configured', error: true };
+        const body = await deps.longterm.read();
+        return { content: body || '(empty)' };
+      }
+    },
+    {
+      name: 'longterm.append',
+      description: 'Append a fact to MEMORY.md. Input: "<section>::<fact>".',
+      tags: ['write', 'memory', 'longterm'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.append: not configured', error: true };
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'longterm.append: needs <section>::<fact>', error: true };
+        const block = await deps.longterm.append(input.slice(0, sep).trim() || 'general', input.slice(sep + 2));
+        return { content: `appended:${block.split("\n")[2] ?? ""}` };
+      }
+    },
+    {
+      name: 'longterm.search',
+      description: 'Search long-term memory by substring. Input: "<query>" or "<query>::<limit>".',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.search: not configured', error: true };
+        const sep = input.lastIndexOf('::');
+        const q = sep === -1 ? input : input.slice(0, sep);
+        const limit = sep === -1 ? 10 : Math.min(50, parseInt(input.slice(sep + 2), 10) || 10);
+        const hits = await deps.longterm.search(q.trim(), limit);
+        return { content: JSON.stringify(hits) };
+      }
+    },
+    {
+      name: 'daily.log',
+      description: 'Read daily log for a date. Input: "YYYY-MM-DD" (or empty for today).',
+      tags: ['read', 'memory', 'log'],
+      execute: async (input) => {
+        if (!deps.dailyLog) return { content: 'daily.log: not configured', error: true };
+        const date = input.trim() || new Date().toISOString().slice(0, 10);
+        const body = await deps.dailyLog.read(date);
+        return { content: body || `(no entries for ${date})` };
+      }
+    },
+    {
+      name: 'daily.dates',
+      description: 'List available daily-log dates (newest first).',
+      tags: ['read', 'memory', 'log'],
+      execute: async () => {
+        if (!deps.dailyLog) return { content: 'daily.dates: not configured', error: true };
+        return { content: JSON.stringify(await deps.dailyLog.listDates()) };
+      }
+    },
+    {
+      name: 'agent.spawn',
+      description: 'Spawn a background sub-agent for a task. Returns the job id (sub-agents cannot nest).',
+      tags: ['write', 'subagent'],
+      execute: (input, ctx) => {
+        if (!deps.subagent) return { content: 'agent.spawn: not configured', error: true };
+        if (!input.trim()) return { content: 'agent.spawn: empty task', error: true };
+        const r = deps.subagent.spawn(input.trim(), ctx.session);
+        if (!r.accepted) return { content: `agent.spawn rejected: ${r.reason}`, error: true };
+        return { content: `jobId:${r.jobId}` };
+      }
+    },
+    {
+      name: 'agent.status',
+      description: 'Query the status of a sub-agent job by id.',
+      tags: ['read', 'subagent'],
+      execute: (input) => {
+        if (!deps.subagent) return { content: 'agent.status: not configured', error: true };
+        const job = deps.subagent.get(input.trim());
+        if (!job) return { content: 'agent.status: job not found', error: true };
+        return { content: JSON.stringify(job) };
+      }
+    },
+    {
+      name: 'agent.list',
+      description: 'List sub-agent jobs (newest first).',
+      tags: ['read', 'subagent'],
+      execute: () => {
+        if (!deps.subagent) return { content: 'agent.list: not configured', error: true };
+        return { content: JSON.stringify(deps.subagent.list().slice(0, 20)) };
+      }
+    },
+    {
+      name: 'node.list',
+      description: 'List paired device nodes with their capabilities.',
+      tags: ['read', 'node'],
+      execute: () => {
+        if (!deps.nodes) return { content: 'node.list: not configured', error: true };
+        return { content: JSON.stringify(deps.nodes.list()) };
+      }
+    },
+    {
+      name: 'node.invoke',
+      description: 'Invoke a capability on a paired device node. Input: "<nodeId>::<capability>::<json-input>".',
+      tags: ['write', 'node'],
+      execute: async (input) => {
+        if (!deps.nodes) return { content: 'node.invoke: not configured', error: true };
+        const parts = input.split('::');
+        if (parts.length < 2) return { content: 'node.invoke: needs <nodeId>::<capability>[::<json>]', error: true };
+        const [nodeId, capability, ...rest] = parts;
+        const argRaw = rest.join('::');
+        let arg: unknown = {};
+        if (argRaw) { try { arg = JSON.parse(argRaw); } catch { arg = argRaw; } }
+        const node = deps.nodes.get(nodeId!);
+        if (!node) return { content: `node.invoke: unknown node ${nodeId}`, error: true };
+        if (!node.capabilities.includes(capability!)) {
+          return { content: `node.invoke: node ${nodeId} does not advertise ${capability}`, error: true };
+        }
+        const inv = deps.nodes.invoke(nodeId!, capability!, arg);
+        try {
+          const settled = await deps.nodes.wait(inv.id, 5_000);
+          return { content: JSON.stringify(settled) };
+        } catch {
+          return { content: `invocationId:${inv.id} (pending)` };
+        }
+      }
+    },
+    {
+      name: 'skills.list',
+      description: 'List loaded skills (metadata only — OpenClaw-style lazy loading).',
+      tags: ['read', 'skill'],
+      execute: () => {
+        if (!deps.skillsLoader) return { content: 'skills.list: not configured', error: true };
+        return { content: JSON.stringify(deps.skillsLoader.list()) };
+      }
+    },
+    {
+      name: 'skills.read',
+      description: 'Read full skill content by name. Use this only when you intend to apply the skill.',
+      tags: ['read', 'skill'],
+      execute: (input) => {
+        if (!deps.skillsLoader) return { content: 'skills.read: not configured', error: true };
+        const body = deps.skillsLoader.read(input.trim());
+        return body ? { content: body } : { content: `skills.read: skill "${input.trim()}" not found`, error: true };
       }
     },
     {
