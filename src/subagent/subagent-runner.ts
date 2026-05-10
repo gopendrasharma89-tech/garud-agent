@@ -73,9 +73,37 @@ export class SubAgentRunner {
 
   get(id: string): SubAgentJob | undefined { return this.jobs.get(id); }
 
-  list(): SubAgentJob[] { return [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt); }
+  list(limit = Infinity): SubAgentJob[] {
+    const sorted = [...this.jobs.values()].sort((a, b) => b.startedAt - a.startedAt);
+    return Number.isFinite(limit) ? sorted.slice(0, limit) : sorted;
+  }
 
   pending(): number { return [...this.jobs.values()].filter((j) => j.status === 'pending' || j.status === 'running').length; }
+
+  /** Wait for a job to settle (done or failed) up to timeoutMs. */
+  async wait(jobId: string, timeoutMs = 30_000): Promise<SubAgentJob> {
+    const start = Date.now();
+    while (true) {
+      const job = this.jobs.get(jobId);
+      if (!job) throw new Error('job not found');
+      if (job.status === 'done' || job.status === 'failed') return job;
+      if (Date.now() - start > timeoutMs) throw new Error('wait timeout');
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  /** Best-effort cancel — marks pending jobs as failed. Running jobs continue. */
+  cancel(jobId: string): boolean {
+    const job = this.jobs.get(jobId);
+    if (!job) return false;
+    if (job.status === 'pending') {
+      job.status = 'failed';
+      job.error = 'cancelled';
+      job.finishedAt = Date.now();
+      return true;
+    }
+    return false;
+  }
 
   /** Drop completed jobs older than `olderThanMs` to bound memory. */
   prune(olderThanMs = 3600_000): number {

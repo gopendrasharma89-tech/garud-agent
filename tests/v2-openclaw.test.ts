@@ -22,9 +22,8 @@ describe('v2.0 OpenClaw-inspired modules', () => {
     });
 
     it('appends a fact under a section', async () => {
-      const block = await mem.append('preferences', 'user prefers dark mode');
-      expect(block).toContain('preferences');
-      expect(block).toContain('user prefers dark mode');
+      const factLine = await mem.append('preferences', 'user prefers dark mode');
+      expect(factLine).toContain('user prefers dark mode');
       const body = await mem.read();
       expect(body).toContain('## preferences');
       expect(body).toContain('user prefers dark mode');

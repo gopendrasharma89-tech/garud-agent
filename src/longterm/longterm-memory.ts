@@ -23,15 +23,53 @@ export class LongTermMemory {
     return this.cache;
   }
 
-  /** Append a new fact under a section header. Returns the appended block. */
+  /** Append a new fact under a section header. Returns the appended fact line. */
   async append(section: string, fact: string): Promise<string> {
     const current = await this.read();
     const stamp = new Date().toISOString().slice(0, 10);
-    const block = `\n## ${section}\n- ${stamp}: ${fact.trim()}\n`;
-    this.cache = current + block;
+    const cleanFact = fact.trim();
+    const factLine = `- ${stamp}: ${cleanFact}`;
+    // If section already exists, append fact under it; else create new section.
+    const sectionHeader = `## ${section}`;
+    const headerIdx = current.indexOf(sectionHeader);
+    if (headerIdx !== -1) {
+      // Find next section or EOF and insert before it.
+      const after = current.indexOf('\n## ', headerIdx + sectionHeader.length);
+      const insertAt = after === -1 ? current.length : after;
+      this.cache = current.slice(0, insertAt) + `\n${factLine}` + current.slice(insertAt);
+    } else {
+      this.cache = current + (current.endsWith('\n') || current === '' ? '' : '\n') + `\n${sectionHeader}\n${factLine}\n`;
+    }
     this.dirty = true;
     await this.flush();
-    return block;
+    return factLine;
+  }
+
+  /** Read a single named section. Returns empty string if section missing. */
+  async section(name: string): Promise<string> {
+    const body = await this.read();
+    const header = `## ${name}`;
+    const idx = body.indexOf(header);
+    if (idx === -1) return '';
+    const after = body.indexOf('\n## ', idx + header.length);
+    return body.slice(idx, after === -1 ? undefined : after).trim();
+  }
+
+  /** Erase all long-term memory. Returns the number of bytes removed. */
+  async clear(): Promise<number> {
+    const before = this.cache?.length ?? (await this.read()).length;
+    this.cache = '';
+    this.dirty = true;
+    await this.flush();
+    return before;
+  }
+
+  /** Count facts (lines starting with "- " under any section). */
+  async factCount(): Promise<number> {
+    const body = await this.read();
+    let count = 0;
+    for (const line of body.split('\n')) if (line.startsWith('- ')) count += 1;
+    return count;
   }
 
   /** Replace the entire memory file with a new body. */

@@ -44,12 +44,25 @@ export class HookRunner {
     for (const [event, list] of this.hooks) {
       const next = list.filter((h) => h.name !== name);
       if (next.length !== list.length) {
-        this.hooks.set(event, next);
+        if (next.length === 0) this.hooks.delete(event);
+        else this.hooks.set(event, next);
         removed = true;
       }
     }
     this.stats.delete(name);
     return removed;
+  }
+
+  /** Number of registered hooks across all events. */
+  size(): number {
+    let n = 0;
+    for (const list of this.hooks.values()) n += list.length;
+    return n;
+  }
+
+  /** Reset stats counters without unregistering hooks. */
+  resetStats(): void {
+    for (const k of this.stats.keys()) this.stats.set(k, { fired: 0, errors: 0 });
   }
 
   list(): Array<{ name: string; event: string; fired: number; errors: number }> {

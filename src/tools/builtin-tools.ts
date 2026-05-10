@@ -1430,6 +1430,93 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         return body ? { content: body } : { content: `skills.read: skill "${input.trim()}" not found`, error: true };
       }
     },
+    // ===== v2.1 additions =====
+    {
+      name: 'longterm.section',
+      description: 'Read a single section from MEMORY.md by name.',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.section: not configured', error: true };
+        const body = await deps.longterm.section(input.trim());
+        return { content: body || `(no section "${input.trim()}")` };
+      }
+    },
+    {
+      name: 'longterm.clear',
+      description: 'Erase all long-term memory. Returns the number of bytes removed.',
+      tags: ['write', 'memory', 'longterm', 'destructive'],
+      execute: async () => {
+        if (!deps.longterm) return { content: 'longterm.clear: not configured', error: true };
+        const bytes = await deps.longterm.clear();
+        return { content: `cleared ${bytes} bytes` };
+      }
+    },
+    {
+      name: 'longterm.stats',
+      description: 'Return long-term memory stats: { bytes, facts }.',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async () => {
+        if (!deps.longterm) return { content: 'longterm.stats: not configured', error: true };
+        const facts = await deps.longterm.factCount();
+        return { content: JSON.stringify({ bytes: deps.longterm.size(), facts }) };
+      }
+    },
+    {
+      name: 'agent.wait',
+      description: 'Wait for a sub-agent job to settle. Input: "<jobId>" or "<jobId>::<timeoutMs>".',
+      tags: ['read', 'subagent'],
+      execute: async (input) => {
+        if (!deps.subagent) return { content: 'agent.wait: not configured', error: true };
+        const sep = input.indexOf('::');
+        const jobId = (sep === -1 ? input : input.slice(0, sep)).trim();
+        const timeoutMs = sep === -1 ? 30_000 : Math.max(1, parseInt(input.slice(sep + 2), 10) || 30_000);
+        try {
+          const job = await deps.subagent.wait(jobId, timeoutMs);
+          return { content: JSON.stringify(job) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `agent.wait: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'agent.cancel',
+      description: 'Best-effort cancel of a pending sub-agent job.',
+      tags: ['write', 'subagent'],
+      execute: (input) => {
+        if (!deps.subagent) return { content: 'agent.cancel: not configured', error: true };
+        const ok = deps.subagent.cancel(input.trim());
+        return { content: ok ? 'cancelled' : 'not-cancellable' };
+      }
+    },
+    {
+      name: 'node.register',
+      description: 'Register a virtual device node. Input: JSON {name, platform, capabilities[]}.',
+      tags: ['write', 'node'],
+      execute: (input) => {
+        if (!deps.nodes) return { content: 'node.register: not configured', error: true };
+        try {
+          const obj = JSON.parse(input);
+          if (!obj.name || !obj.platform || !Array.isArray(obj.capabilities)) {
+            return { content: 'node.register: needs {name, platform, capabilities[]}', error: true };
+          }
+          const node = deps.nodes.register(obj);
+          return { content: JSON.stringify(node) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `node.register error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'node.unregister',
+      description: 'Unregister a paired device node by id.',
+      tags: ['write', 'node'],
+      execute: (input) => {
+        if (!deps.nodes) return { content: 'node.unregister: not configured', error: true };
+        return { content: deps.nodes.unregister(input.trim()) ? 'removed' : 'not-found' };
+      }
+    },
     {
       name: 'array.head',
       description: 'First N items of a JSON array. Input: "<json>::<n>".',
