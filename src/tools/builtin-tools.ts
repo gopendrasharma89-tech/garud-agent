@@ -1517,6 +1517,66 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         return { content: deps.nodes.unregister(input.trim()) ? 'removed' : 'not-found' };
       }
     },
+    // ===== v2.2 additions =====
+    {
+      name: 'longterm.sections',
+      description: 'List all section names in MEMORY.md (preserves file order).',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async () => {
+        if (!deps.longterm) return { content: 'longterm.sections: not configured', error: true };
+        return { content: JSON.stringify(await deps.longterm.sections()) };
+      }
+    },
+    {
+      name: 'agent.stats',
+      description: 'Sub-agent job counters by status.',
+      tags: ['read', 'subagent'],
+      execute: () => {
+        if (!deps.subagent) return { content: 'agent.stats: not configured', error: true };
+        return { content: JSON.stringify(deps.subagent.stats()) };
+      }
+    },
+    {
+      name: 'agent.prune',
+      description: 'Drop completed sub-agent jobs older than N ms (default 3600000 = 1h).',
+      tags: ['write', 'subagent'],
+      execute: (input) => {
+        if (!deps.subagent) return { content: 'agent.prune: not configured', error: true };
+        const ms = input.trim() ? parseInt(input.trim(), 10) : 3_600_000;
+        if (!Number.isFinite(ms) || ms < 0) return { content: 'agent.prune: invalid ms', error: true };
+        return { content: `pruned ${deps.subagent.prune(ms)} jobs` };
+      }
+    },
+    {
+      name: 'node.stats',
+      description: 'Node + invocation counters.',
+      tags: ['read', 'node'],
+      execute: () => {
+        if (!deps.nodes) return { content: 'node.stats: not configured', error: true };
+        return { content: JSON.stringify(deps.nodes.stats()) };
+      }
+    },
+    {
+      name: 'node.invocations',
+      description: 'Recent node invocations (newest first). Input: optional limit (default 20).',
+      tags: ['read', 'node'],
+      execute: (input) => {
+        if (!deps.nodes) return { content: 'node.invocations: not configured', error: true };
+        const limit = input.trim() ? Math.min(200, parseInt(input.trim(), 10) || 20) : 20;
+        return { content: JSON.stringify(deps.nodes.listInvocations().slice(0, limit)) };
+      }
+    },
+    {
+      name: 'node.idle',
+      description: 'Nodes not seen in the last N ms. Input: "<ms>" (default 60000).',
+      tags: ['read', 'node'],
+      execute: (input) => {
+        if (!deps.nodes) return { content: 'node.idle: not configured', error: true };
+        const ms = input.trim() ? parseInt(input.trim(), 10) : 60_000;
+        if (!Number.isFinite(ms) || ms < 0) return { content: 'node.idle: invalid ms', error: true };
+        return { content: JSON.stringify(deps.nodes.idle(ms)) };
+      }
+    },
     {
       name: 'array.head',
       description: 'First N items of a JSON array. Input: "<json>::<n>".',

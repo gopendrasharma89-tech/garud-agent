@@ -16,7 +16,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const { gateway, scheduler, logger, tools, metrics, broadcastChannel } = await bootstrap(config);
+  const { gateway, scheduler, logger, tools, metrics, broadcastChannel, longterm, dailyLog, subagent, nodes, hooks } = await bootstrap(config);
 
   if (process.argv.includes('--demo')) {
     const reply = await gateway.handle({
@@ -45,7 +45,8 @@ async function main(): Promise<void> {
   const server = createServer({
     gateway, config, tools, metrics,
     logger: logger.child('http'),
-    wsClientCount: () => wsServer?.size() ?? 0
+    wsClientCount: () => wsServer?.size() ?? 0,
+    longterm, dailyLog, subagent, nodes, hooks
   });
   if (wsServer) wsServer.attach(server);
 

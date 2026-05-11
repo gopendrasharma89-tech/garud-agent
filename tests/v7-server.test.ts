@@ -45,9 +45,9 @@ describe('v0.7 server endpoints', () => {
       uptime: number;
     };
     expect(body.ok).toBe(true);
-    expect(body.version).toBe('2.1.0');
-    expect(body.codename).toBe('Suparna');
-    expect(body.releasedAt).toBe('2026-05-09');
+    expect(body.version).toBe('2.2.0');
+    expect(body.codename).toBe('Vinata');
+    expect(body.releasedAt).toBe('2026-05-11');
     expect(body.node).toMatch(/^v\d+/);
     expect(typeof body.uptime).toBe('number');
   });

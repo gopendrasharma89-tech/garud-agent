@@ -107,4 +107,15 @@ export class LongTermMemory {
   }
 
   size(): number { return this.cache?.length ?? 0; }
+
+  /** List all section names found in MEMORY.md (preserves file order). */
+  async sections(): Promise<string[]> {
+    const body = await this.read();
+    if (!body) return [];
+    const names: string[] = [];
+    for (const raw of body.split('\n')) {
+      if (raw.startsWith('## ')) names.push(raw.slice(3).trim());
+    }
+    return names;
+  }
 }

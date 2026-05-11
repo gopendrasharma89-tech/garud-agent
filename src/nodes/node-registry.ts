@@ -119,4 +119,20 @@ export class NodeRegistry {
   listInvocations(): NodeInvocation[] {
     return [...this.invocations.values()].sort((a, b) => b.issuedAt - a.issuedAt);
   }
+
+  /** List nodes that have not been seen in the last `ms` milliseconds. */
+  idle(ms: number): DeviceNode[] {
+    const cutoff = Date.now() - ms;
+    return [...this.nodes.values()].filter((n) => n.lastSeenAt < cutoff);
+  }
+
+  /** Aggregate counters. */
+  stats(): { nodes: number; invocations: { pending: number; running: number; done: number; failed: number; total: number } } {
+    const inv = { pending: 0, running: 0, done: 0, failed: 0, total: 0 };
+    for (const i of this.invocations.values()) {
+      inv[i.status] += 1;
+      inv.total += 1;
+    }
+    return { nodes: this.nodes.size, invocations: inv };
+  }
 }

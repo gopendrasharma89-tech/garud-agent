@@ -105,6 +105,16 @@ export class SubAgentRunner {
     return false;
   }
 
+  /** Counters keyed by status. */
+  stats(): { pending: number; running: number; done: number; failed: number; total: number } {
+    const s = { pending: 0, running: 0, done: 0, failed: 0, total: 0 };
+    for (const job of this.jobs.values()) {
+      s[job.status] += 1;
+      s.total += 1;
+    }
+    return s;
+  }
+
   /** Drop completed jobs older than `olderThanMs` to bound memory. */
   prune(olderThanMs = 3600_000): number {
     const cutoff = Date.now() - olderThanMs;

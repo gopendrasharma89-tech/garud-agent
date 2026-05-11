@@ -36,7 +36,7 @@ describe('v0.6 server endpoints', () => {
   it('/health reports version 0.6.0', async () => {
     const res = await fetch(`${baseUrl}/health`);
     const body = await res.json() as { version: string };
-    expect(body.version).toBe('2.1.0');
+    expect(body.version).toBe('2.2.0');
   });
 
   it('/live returns ok', async () => {
@@ -44,7 +44,7 @@ describe('v0.6 server endpoints', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { ok: boolean; version: string };
     expect(body.ok).toBe(true);
-    expect(body.version).toBe('2.1.0');
+    expect(body.version).toBe('2.2.0');
   });
 
   it('/ready includes brain check + version', async () => {
@@ -52,7 +52,7 @@ describe('v0.6 server endpoints', () => {
     const body = await res.json() as { ok: boolean; reasons: string[]; version: string };
     expect(body.ok).toBe(true);
     expect(body.reasons).toEqual([]);
-    expect(body.version).toBe('2.1.0');
+    expect(body.version).toBe('2.2.0');
   });
 
   it('/slo returns error budget info', async () => {

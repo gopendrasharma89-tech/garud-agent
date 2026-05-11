@@ -20,6 +20,11 @@ export interface ServerDeps {
   metrics?: MetricsRegistry;
   logger?: Logger;
   wsClientCount?: () => number;
+  longterm?: import('./longterm/longterm-memory.js').LongTermMemory;
+  dailyLog?: import('./longterm/daily-log.js').DailyLog;
+  subagent?: import('./subagent/subagent-runner.js').SubAgentRunner;
+  nodes?: import('./nodes/node-registry.js').NodeRegistry;
+  hooks?: import('./hooks/hook-runner.js').HookRunner;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -326,6 +331,66 @@ export function createServer(deps: ServerDeps): http.Server {
         const entries = sink?.list({ limit: 10_000 }) ?? [];
         const ndjson = entries.map((e) => JSON.stringify(e)).join('\n');
         return sendText(res, 200, 'application/x-ndjson; charset=utf-8', ndjson);
+      }
+
+      // ===== v2.2: OpenClaw subsystem endpoints =====
+      if (req.method === 'GET' && url.pathname === '/longterm') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        return send(res, 200, {
+          ok: true,
+          bytes: deps.longterm.size(),
+          body: await deps.longterm.read(),
+          facts: await deps.longterm.factCount(),
+          sections: await deps.longterm.sections()
+        });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/longterm/stats') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        return send(res, 200, {
+          ok: true,
+          bytes: deps.longterm.size(),
+          facts: await deps.longterm.factCount(),
+          sections: (await deps.longterm.sections()).length
+        });
+      }
+
+      const sectionMatch = req.method === 'GET' && /^\/longterm\/section\/[^/]+$/.test(url.pathname);
+      if (sectionMatch) {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        const name = decodeURIComponent(url.pathname.split('/')[3]!);
+        const body = await deps.longterm.section(name);
+        return send(res, 200, { ok: true, section: name, body });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/sub-agents') {
+        if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
+        const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') ?? '50', 10)));
+        return send(res, 200, { ok: true, jobs: deps.subagent.list(limit), stats: deps.subagent.stats() });
+      }
+
+      const subAgentGetMatch = req.method === 'GET' && /^\/sub-agents\/[^/]+$/.test(url.pathname);
+      if (subAgentGetMatch) {
+        if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
+        const id = url.pathname.split('/')[2]!;
+        const job = deps.subagent.get(id);
+        return job ? send(res, 200, { ok: true, job }) : send(res, 404, { ok: false, error: 'job not found' });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/nodes') {
+        if (!deps.nodes) return send(res, 503, { ok: false, error: 'nodes not configured' });
+        return send(res, 200, { ok: true, nodes: deps.nodes.list(), stats: deps.nodes.stats() });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/nodes/invocations') {
+        if (!deps.nodes) return send(res, 503, { ok: false, error: 'nodes not configured' });
+        const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get('limit') ?? '50', 10)));
+        return send(res, 200, { ok: true, invocations: deps.nodes.listInvocations().slice(0, limit) });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/hooks') {
+        if (!deps.hooks) return send(res, 503, { ok: false, error: 'hooks not configured' });
+        return send(res, 200, { ok: true, hooks: deps.hooks.list(), size: deps.hooks.size() });
       }
 
       if (req.method === 'GET' && url.pathname === '/memories') {
