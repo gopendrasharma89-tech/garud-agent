@@ -393,6 +393,74 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, hooks: deps.hooks.list(), size: deps.hooks.size() });
       }
 
+      // ===== v2.3: write endpoints for OpenClaw subsystems =====
+      if (req.method === 'POST' && url.pathname === '/longterm/append') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        let payload: { section?: string; fact?: string };
+        try { payload = (await readJson<{ section?: string; fact?: string }>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        if (!payload.section || !payload.fact) {
+          return send(res, 400, { ok: false, error: 'section, fact required' });
+        }
+        const line = await deps.longterm.append(payload.section, payload.fact);
+        return send(res, 200, { ok: true, line });
+      }
+
+      if (req.method === 'DELETE' && url.pathname === '/longterm') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        const bytes = await deps.longterm.clear();
+        return send(res, 200, { ok: true, bytesRemoved: bytes });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/longterm/history') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        const limit = Math.max(1, Math.min(1000, parseInt(url.searchParams.get('limit') ?? '50', 10)));
+        return send(res, 200, { ok: true, history: await deps.longterm.history(limit) });
+      }
+
+      const subAgentCancelMatch = req.method === 'POST' && /^\/sub-agents\/[^/]+\/cancel$/.test(url.pathname);
+      if (subAgentCancelMatch) {
+        if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
+        const id = url.pathname.split('/')[2]!;
+        return send(res, 200, { ok: true, cancelled: deps.subagent.cancel(id) });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/sub-agents/prune') {
+        if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
+        const { payload } = await readJson<{ olderThanMs?: number }>(req);
+        const ms = typeof payload.olderThanMs === 'number' ? payload.olderThanMs : 3_600_000;
+        return send(res, 200, { ok: true, pruned: deps.subagent.prune(ms) });
+      }
+
+      const nodeInvokeMatch = req.method === 'POST' && /^\/nodes\/[^/]+\/invoke$/.test(url.pathname);
+      if (nodeInvokeMatch) {
+        if (!deps.nodes) return send(res, 503, { ok: false, error: 'nodes not configured' });
+        const id = url.pathname.split('/')[2]!;
+        const node = deps.nodes.get(id);
+        if (!node) return send(res, 404, { ok: false, error: 'unknown node' });
+        let payload: { capability?: string; input?: unknown; timeoutMs?: number };
+        try { payload = (await readJson<{ capability?: string; input?: unknown; timeoutMs?: number }>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        if (!payload.capability) return send(res, 400, { ok: false, error: 'capability required' });
+        if (!node.capabilities.includes(payload.capability)) {
+          return send(res, 400, { ok: false, error: `node does not advertise ${payload.capability}` });
+        }
+        const inv = deps.nodes.invoke(id, payload.capability, payload.input ?? {});
+        try {
+          const settled = await deps.nodes.wait(inv.id, Math.min(30_000, payload.timeoutMs ?? 5_000));
+          return send(res, 200, { ok: true, invocation: settled });
+        } catch {
+          return send(res, 202, { ok: true, pending: true, invocationId: inv.id });
+        }
+      }
+
+      const nodeDeleteMatch = req.method === 'DELETE' && /^\/nodes\/[^/]+$/.test(url.pathname);
+      if (nodeDeleteMatch) {
+        if (!deps.nodes) return send(res, 503, { ok: false, error: 'nodes not configured' });
+        const id = url.pathname.split('/')[2]!;
+        return send(res, 200, { ok: true, removed: deps.nodes.unregister(id) });
+      }
+
       if (req.method === 'GET' && url.pathname === '/memories') {
         const sessionId = url.searchParams.get('sessionId');
         const query = url.searchParams.get('q');

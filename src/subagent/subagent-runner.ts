@@ -20,7 +20,7 @@ export interface SubAgentJob {
 
 export class SubAgentRunner {
   private readonly jobs = new Map<string, SubAgentJob>();
-  private active = 0;
+  private activeCount = 0;
 
   constructor(
     private readonly runtime: AgentRuntime,
@@ -33,7 +33,7 @@ export class SubAgentRunner {
     if ((parentSession as Session & { settings: { isSubAgent?: boolean } }).settings.isSubAgent) {
       return { jobId: '', accepted: false, reason: 'sub-agents cannot nest' };
     }
-    if (this.active >= this.maxConcurrent) {
+    if (this.activeCount >= this.maxConcurrent) {
       return { jobId: '', accepted: false, reason: 'max concurrent sub-agents reached' };
     }
     const job: SubAgentJob = {
@@ -50,7 +50,7 @@ export class SubAgentRunner {
   }
 
   private async runJob(job: SubAgentJob, parent: Session): Promise<void> {
-    this.active += 1;
+    this.activeCount += 1;
     job.status = 'running';
     try {
       const subSession: Session = {
@@ -67,7 +67,7 @@ export class SubAgentRunner {
       job.error = error instanceof Error ? error.message : String(error);
     } finally {
       job.finishedAt = Date.now();
-      this.active -= 1;
+      this.activeCount -= 1;
     }
   }
 
@@ -103,6 +103,20 @@ export class SubAgentRunner {
       return true;
     }
     return false;
+  }
+
+  /** Currently running jobs. */
+  active(): SubAgentJob[] {
+    return [...this.jobs.values()].filter((j) => j.status === 'running' || j.status === 'pending');
+  }
+
+  /** Runtime in ms for a job (pending = 0, running = elapsed, done = total). */
+  jobDuration(id: string): number {
+    const job = this.jobs.get(id);
+    if (!job) return 0;
+    if (job.status === 'pending') return 0;
+    const end = job.finishedAt ?? Date.now();
+    return Math.max(0, end - job.startedAt);
   }
 
   /** Counters keyed by status. */

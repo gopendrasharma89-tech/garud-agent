@@ -1572,9 +1572,54 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       tags: ['read', 'node'],
       execute: (input) => {
         if (!deps.nodes) return { content: 'node.idle: not configured', error: true };
-        const ms = input.trim() ? parseInt(input.trim(), 10) : 60_000;
+        const trimmed = input.trim();
+        const ms = trimmed === '' ? 60_000 : parseInt(trimmed, 10);
         if (!Number.isFinite(ms) || ms < 0) return { content: 'node.idle: invalid ms', error: true };
         return { content: JSON.stringify(deps.nodes.idle(ms)) };
+      }
+    },
+    // ===== v2.3 additions =====
+    {
+      name: 'longterm.history',
+      description: 'Chronological fact list across all sections (newest first). Input: optional limit (default 50).',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.history: not configured', error: true };
+        const trimmed = input.trim();
+        const limit = trimmed === '' ? 50 : parseInt(trimmed, 10);
+        if (!Number.isFinite(limit) || limit < 1) return { content: 'longterm.history: invalid limit', error: true };
+        return { content: JSON.stringify(await deps.longterm.history(limit)) };
+      }
+    },
+    {
+      name: 'agent.active',
+      description: 'List currently running or pending sub-agent jobs.',
+      tags: ['read', 'subagent'],
+      execute: () => {
+        if (!deps.subagent) return { content: 'agent.active: not configured', error: true };
+        return { content: JSON.stringify(deps.subagent.active()) };
+      }
+    },
+    {
+      name: 'agent.duration',
+      description: 'Runtime in ms for a sub-agent job by id.',
+      tags: ['read', 'subagent'],
+      execute: (input) => {
+        if (!deps.subagent) return { content: 'agent.duration: not configured', error: true };
+        const id = input.trim();
+        if (!id) return { content: 'agent.duration: empty id', error: true };
+        return { content: String(deps.subagent.jobDuration(id)) };
+      }
+    },
+    {
+      name: 'node.byCapability',
+      description: 'List device nodes that advertise a given capability.',
+      tags: ['read', 'node'],
+      execute: (input) => {
+        if (!deps.nodes) return { content: 'node.byCapability: not configured', error: true };
+        const cap = input.trim();
+        if (!cap) return { content: 'node.byCapability: empty capability', error: true };
+        return { content: JSON.stringify(deps.nodes.byCapability(cap)) };
       }
     },
     {

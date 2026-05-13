@@ -1,42 +1,45 @@
 # Changelog
 
-## [2.2.0] — 2026-05-11 — "Vinata"
+## [2.3.0] — 2026-05-13 — "Aruna"
 
-OpenClaw subsystems now fully exposed via HTTP + 6 new tools + stats APIs.
+Bug fixes + 4 new tools + 6 new HTTP write endpoints + subsystem enhancements.
 
 ### Bug fixes
-- `node.register` validation tightened (requires {name, platform, capabilities[]})
-- `LongTermMemory` lacked section-listing API
-- v2.0 OpenClaw subsystems weren't reachable over HTTP (only via tools/CLI)
+- `node.idle` `parseInt(input, 10) || 60_000` treated input `"0"` as falsy → defaulted to 60000; now explicit empty-string check
+- `agent.prune`, `node.invocations` same falsy-fallback pattern fixed
+- `active` identifier collision in `SubAgentRunner` (private counter vs. public method) — renamed counter to `activeCount`
+- v2.2 exposed only GET endpoints for OpenClaw subsystems — v2.3 adds POST/DELETE
 
 ### New subsystem methods
-- `LongTermMemory.sections()` — list section names in file order
-- `SubAgentRunner.stats()` — counters by status (pending/running/done/failed)
-- `NodeRegistry.idle(ms)` — nodes not seen recently
-- `NodeRegistry.stats()` — node + invocation counters
+- `LongTermMemory.history(limit)` — chronological fact list, newest first
+- `SubAgentRunner.active()` — currently running or pending jobs
+- `SubAgentRunner.jobDuration(id)` — runtime in ms
+- `NodeRegistry.byCapability(cap)` — find nodes advertising capability
 
-### New HTTP endpoints (7)
-- `GET  /longterm` — full MEMORY.md state
-- `GET  /longterm/stats` — bytes + facts + section count
-- `GET  /longterm/section/:name` — single section body
-- `GET  /sub-agents` — list jobs + status counters
-- `GET  /sub-agents/:id` — job detail
-- `GET  /nodes` — paired devices + stats
-- `GET  /nodes/invocations` — recent invocation log
-- `GET  /hooks` — registered hooks with fire/error counters
+### New HTTP write endpoints (6)
+- `POST /longterm/append` — append fact via HTTP
+- `DELETE /longterm` — clear MEMORY.md
+- `GET /longterm/history` — chronological fact list
+- `POST /sub-agents/:id/cancel` — cancel pending job
+- `POST /sub-agents/prune` — bulk-drop old jobs
+- `POST /nodes/:id/invoke` — invoke capability (waits up to 30s)
+- `DELETE /nodes/:id` — unregister node
 
-### New tools (+6 → 117 total)
-- `longterm.sections`
-- `agent.stats`, `agent.prune`
-- `node.stats`, `node.invocations`, `node.idle`
+### New tools (+4 → 121 total)
+- `longterm.history`
+- `agent.active`, `agent.duration`
+- `node.byCapability`
 
 ### Stats
-- **434 tests pass** across 39 suites in ~13 s
-- **45 source files**, **39 test files**, **12,571 lines** of TypeScript
+- **450 tests pass** across 40 suites in ~13 s
+- **45 source files**, **40 test files**, **12,924 lines** of TypeScript
 - Strict TypeScript, zero runtime dependencies
 
+## [2.2.0] — 2026-05-11 — "Vinata"
+OpenClaw subsystems exposed via HTTP + 6 new tools. 117 tools, 434 tests.
+
 ## [2.1.0] — 2026-05-09 — "Suparna"
-Bug fixes + 7 new tools + enhanced subsystem APIs. 111 tools, 421 tests.
+Bug fixes + 7 new tools. 111 tools, 421 tests.
 
 ## [2.0.0] — 2026-05-07 — "Pakshiraj"
 OpenClaw-inspired architecture: LongTermMemory, DailyLog, SubAgentRunner, NodeRegistry, HookRunner, ContextCompactor. 104 tools, 411 tests.
@@ -48,7 +51,7 @@ First stable release. 95 tools, 392 tests.
 Type-aware set ops, stricter validators. 84 tools, 381 tests.
 
 ## [0.8.0] — "Tej"
-Fix `::` parsing bugs, validators added. 71 tools, 361 tests.
+Fix `::` parsing bugs, validators. 71 tools, 361 tests.
 
 ## [0.7.0] — "Vajra"
 Word-boundary SSE chunking, `/api/version`. 58 tools, 341 tests.

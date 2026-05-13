@@ -1,6 +1,6 @@
 {
   "name": "garud-agent",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Local-first policy-aware multi-channel agent gateway. Pluggable LLM brains, persistent memory with pinning/TTL/dedup, 90+ built-in tools, scheduler, pairing, plugins, skills, WebSocket, signed webhooks, dashboard, Prometheus metrics, conversation history, audit replay, REPL CLI. Strict TypeScript, zero runtime dependencies.",
   "keywords": ["agent", "llm", "local-first", "typescript", "prometheus", "webhook", "websocket", "openai", "chatbot", "toolkit"],
   "author": "gopendrasharma89-tech",

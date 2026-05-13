@@ -120,6 +120,11 @@ export class NodeRegistry {
     return [...this.invocations.values()].sort((a, b) => b.issuedAt - a.issuedAt);
   }
 
+  /** List nodes that advertise a given capability. */
+  byCapability(capability: string): DeviceNode[] {
+    return [...this.nodes.values()].filter((n) => n.capabilities.includes(capability));
+  }
+
   /** List nodes that have not been seen in the last `ms` milliseconds. */
   idle(ms: number): DeviceNode[] {
     const cutoff = Date.now() - ms;

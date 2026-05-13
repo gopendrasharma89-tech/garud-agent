@@ -108,6 +108,21 @@ export class LongTermMemory {
 
   size(): number { return this.cache?.length ?? 0; }
 
+  /** Return chronological list of facts across all sections (most recent first). */
+  async history(limit = 50): Promise<Array<{ section: string; date: string; fact: string }>> {
+    const body = await this.read();
+    if (!body) return [];
+    const out: Array<{ section: string; date: string; fact: string }> = [];
+    let section = 'general';
+    for (const raw of body.split('\n')) {
+      if (raw.startsWith('## ')) { section = raw.slice(3).trim(); continue; }
+      const m = /^-\s+(\d{4}-\d{2}-\d{2}):\s*(.*)$/.exec(raw);
+      if (m) out.push({ section, date: m[1]!, fact: m[2]! });
+    }
+    // Sort by date descending, stable by original order for same date.
+    return out.reverse().sort((a, b) => b.date.localeCompare(a.date)).slice(0, Math.max(1, Math.min(1000, limit)));
+  }
+
   /** List all section names found in MEMORY.md (preserves file order). */
   async sections(): Promise<string[]> {
     const body = await this.read();
