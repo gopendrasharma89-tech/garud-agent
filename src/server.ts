@@ -418,18 +418,55 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, history: await deps.longterm.history(limit) });
       }
 
+      const byDateMatch = req.method === 'GET' && /^\/longterm\/by-date\/\d{4}-\d{2}-\d{2}$/.test(url.pathname);
+      if (byDateMatch) {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        const date = url.pathname.split('/')[3]!;
+        return send(res, 200, { ok: true, date, facts: await deps.longterm.byDate(date) });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/daily') {
+        if (!deps.dailyLog) return send(res, 503, { ok: false, error: 'daily-log not configured' });
+        const date = url.searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return send(res, 400, { ok: false, error: 'invalid date (YYYY-MM-DD)' });
+        }
+        const body = await deps.dailyLog.read(date);
+        return send(res, 200, { ok: true, date, body });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/daily/dates') {
+        if (!deps.dailyLog) return send(res, 503, { ok: false, error: 'daily-log not configured' });
+        return send(res, 200, { ok: true, dates: await deps.dailyLog.listDates() });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/daily/summary') {
+        if (!deps.dailyLog) return send(res, 503, { ok: false, error: 'daily-log not configured' });
+        return send(res, 200, { ok: true, ...(await deps.dailyLog.summary()) });
+      }
+
+      const hooksByEventMatch = req.method === 'GET' && /^\/hooks\/event\/[^/]+$/.test(url.pathname);
+      if (hooksByEventMatch) {
+        if (!deps.hooks) return send(res, 503, { ok: false, error: 'hooks not configured' });
+        const event = decodeURIComponent(url.pathname.split('/')[3]!);
+        return send(res, 200, { ok: true, event, hooks: deps.hooks.byEvent(event) });
+      }
+
       const subAgentCancelMatch = req.method === 'POST' && /^\/sub-agents\/[^/]+\/cancel$/.test(url.pathname);
       if (subAgentCancelMatch) {
         if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
         const id = url.pathname.split('/')[2]!;
-        return send(res, 200, { ok: true, cancelled: deps.subagent.cancel(id) });
+        return send(res, 200, { ok: true, cancelled: deps.subagent.cancel(id), duration: deps.subagent.jobDuration(id) });
       }
 
       if (req.method === 'POST' && url.pathname === '/sub-agents/prune') {
         if (!deps.subagent) return send(res, 503, { ok: false, error: 'subagent not configured' });
         const { payload } = await readJson<{ olderThanMs?: number }>(req);
-        const ms = typeof payload.olderThanMs === 'number' ? payload.olderThanMs : 3_600_000;
-        return send(res, 200, { ok: true, pruned: deps.subagent.prune(ms) });
+        const raw = typeof payload.olderThanMs === 'number' ? payload.olderThanMs : 3_600_000;
+        if (!Number.isFinite(raw) || raw < 0) {
+          return send(res, 400, { ok: false, error: 'olderThanMs must be a non-negative number' });
+        }
+        return send(res, 200, { ok: true, pruned: deps.subagent.prune(raw) });
       }
 
       const nodeInvokeMatch = req.method === 'POST' && /^\/nodes\/[^/]+\/invoke$/.test(url.pathname);
@@ -445,9 +482,14 @@ export function createServer(deps: ServerDeps): http.Server {
         if (!node.capabilities.includes(payload.capability)) {
           return send(res, 400, { ok: false, error: `node does not advertise ${payload.capability}` });
         }
+        const requestedTimeout = payload.timeoutMs ?? 5_000;
+        if (!Number.isFinite(requestedTimeout) || requestedTimeout < 0) {
+          return send(res, 400, { ok: false, error: 'timeoutMs must be a non-negative number' });
+        }
+        const timeoutMs = Math.min(30_000, Math.max(1, requestedTimeout));
         const inv = deps.nodes.invoke(id, payload.capability, payload.input ?? {});
         try {
-          const settled = await deps.nodes.wait(inv.id, Math.min(30_000, payload.timeoutMs ?? 5_000));
+          const settled = await deps.nodes.wait(inv.id, timeoutMs);
           return send(res, 200, { ok: true, invocation: settled });
         } catch {
           return send(res, 202, { ok: true, pending: true, invocationId: inv.id });

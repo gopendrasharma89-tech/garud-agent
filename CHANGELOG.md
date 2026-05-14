@@ -1,45 +1,47 @@
 # Changelog
 
-## [2.3.0] — 2026-05-13 — "Aruna"
+## [2.4.0] — 2026-05-14 — "Sampati"
 
-Bug fixes + 4 new tools + 6 new HTTP write endpoints + subsystem enhancements.
+Bug fixes + 4 new tools + 7 new HTTP endpoints + subsystem enhancements.
 
 ### Bug fixes
-- `node.idle` `parseInt(input, 10) || 60_000` treated input `"0"` as falsy → defaulted to 60000; now explicit empty-string check
-- `agent.prune`, `node.invocations` same falsy-fallback pattern fixed
-- `active` identifier collision in `SubAgentRunner` (private counter vs. public method) — renamed counter to `activeCount`
-- v2.2 exposed only GET endpoints for OpenClaw subsystems — v2.3 adds POST/DELETE
+- `LongTermMemory.history` reversed insertion order incorrectly; now stable-sorts by `(date desc, insertion-order desc)`
+- `SubAgentRunner.jobDuration` returned `0` for both missing and pending jobs (ambiguous); now returns `-1` for missing
+- `POST /nodes/:id/invoke` allowed negative `timeoutMs`; now validated `>= 0` and clamped to `[1, 30000]`
+- `POST /sub-agents/prune` accepted negative `olderThanMs`; now rejected with 400
 
 ### New subsystem methods
-- `LongTermMemory.history(limit)` — chronological fact list, newest first
-- `SubAgentRunner.active()` — currently running or pending jobs
-- `SubAgentRunner.jobDuration(id)` — runtime in ms
-- `NodeRegistry.byCapability(cap)` — find nodes advertising capability
+- `LongTermMemory.byDate(date)` — facts logged on a specific YYYY-MM-DD
+- `DailyLog.summary()` — `{ dates, bytes }` aggregate stats
+- `HookRunner.byEvent(event)` — hooks registered for a specific event with stats
 
-### New HTTP write endpoints (6)
-- `POST /longterm/append` — append fact via HTTP
-- `DELETE /longterm` — clear MEMORY.md
-- `GET /longterm/history` — chronological fact list
-- `POST /sub-agents/:id/cancel` — cancel pending job
-- `POST /sub-agents/prune` — bulk-drop old jobs
-- `POST /nodes/:id/invoke` — invoke capability (waits up to 30s)
-- `DELETE /nodes/:id` — unregister node
+### New HTTP endpoints (7)
+- `GET /longterm/by-date/:date` — facts on a specific date
+- `GET /daily` — today's (or specified) daily-log markdown
+- `GET /daily/dates` — sorted list of available log dates
+- `GET /daily/summary` — aggregate `{ dates, bytes }`
+- `GET /hooks/event/:event` — hooks for a specific event with fire/error counters
+- `POST /sub-agents/:id/cancel` now also returns `duration`
+- `POST /nodes/:id/invoke` / `POST /sub-agents/prune` validate numeric inputs
 
-### New tools (+4 → 121 total)
-- `longterm.history`
-- `agent.active`, `agent.duration`
-- `node.byCapability`
+### New tools (+4 → 125 total)
+- `longterm.byDate`
+- `daily.summary`
+- `hooks.byEvent`, `hooks.size`
 
 ### Stats
-- **450 tests pass** across 40 suites in ~13 s
-- **45 source files**, **40 test files**, **12,924 lines** of TypeScript
+- **465 tests pass** across 41 suites in ~13 s
+- **45 source files**, **41 test files**, **13,246 lines** of TypeScript
 - Strict TypeScript, zero runtime dependencies
+
+## [2.3.0] — 2026-05-13 — "Aruna"
+HTTP write endpoints + 4 new tools + falsy-fallback fix. 121 tools, 450 tests.
 
 ## [2.2.0] — 2026-05-11 — "Vinata"
 OpenClaw subsystems exposed via HTTP + 6 new tools. 117 tools, 434 tests.
 
 ## [2.1.0] — 2026-05-09 — "Suparna"
-Bug fixes + 7 new tools. 111 tools, 421 tests.
+Bug fixes + 7 new tools + enhanced subsystem APIs. 111 tools, 421 tests.
 
 ## [2.0.0] — 2026-05-07 — "Pakshiraj"
 OpenClaw-inspired architecture: LongTermMemory, DailyLog, SubAgentRunner, NodeRegistry, HookRunner, ContextCompactor. 104 tools, 411 tests.

@@ -38,4 +38,21 @@ export class DailyLog {
       return files.filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f)).map((f) => f.slice(0, 10)).sort().reverse();
     } catch { return []; }
   }
+
+  /** Summary stats: count of dates and bytes used. */
+  async summary(): Promise<{ dates: number; bytes: number }> {
+    try {
+      const dates = await this.listDates();
+      let bytes = 0;
+      for (const d of dates) {
+        try {
+          const stat = await fs.stat(path.join(this.dir, `${d}.md`));
+          bytes += stat.size;
+        } catch { /* skip missing */ }
+      }
+      return { dates: dates.length, bytes };
+    } catch {
+      return { dates: 0, bytes: 0 };
+    }
+  }
 }

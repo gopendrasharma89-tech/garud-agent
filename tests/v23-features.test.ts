@@ -61,11 +61,11 @@ describe('v2.3 subsystem methods', () => {
       expect(runner.active().length).toBeGreaterThan(0);
     });
 
-    it('jobDuration returns 0 for missing job', async () => {
+    it('jobDuration returns -1 for missing job (v2.4 sentinel)', async () => {
       const { SubAgentRunner } = await import('../src/subagent/subagent-runner.js');
       const stub = { reply: async () => ({ text: 'ok', toolUses: [] }) } as unknown as ConstructorParameters<typeof SubAgentRunner>[0];
       const runner = new SubAgentRunner(stub, 4);
-      expect(runner.jobDuration('nonexistent')).toBe(0);
+      expect(runner.jobDuration('nonexistent')).toBe(-1);
     });
   });
 

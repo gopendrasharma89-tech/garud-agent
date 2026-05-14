@@ -110,10 +110,10 @@ export class SubAgentRunner {
     return [...this.jobs.values()].filter((j) => j.status === 'running' || j.status === 'pending');
   }
 
-  /** Runtime in ms for a job (pending = 0, running = elapsed, done = total). */
+  /** Runtime in ms for a job. Returns -1 if missing, 0 if pending. */
   jobDuration(id: string): number {
     const job = this.jobs.get(id);
-    if (!job) return 0;
+    if (!job) return -1;
     if (job.status === 'pending') return 0;
     const end = job.finishedAt ?? Date.now();
     return Math.max(0, end - job.startedAt);

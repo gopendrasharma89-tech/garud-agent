@@ -13,6 +13,7 @@ export interface BuiltinToolDeps {
   dailyLog?: import('../longterm/daily-log.js').DailyLog;
   subagent?: import('../subagent/subagent-runner.js').SubAgentRunner;
   nodes?: import('../nodes/node-registry.js').NodeRegistry;
+  hooks?: import('../hooks/hook-runner.js').HookRunner;
   skillsLoader?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined };
 }
 
@@ -1620,6 +1621,47 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         const cap = input.trim();
         if (!cap) return { content: 'node.byCapability: empty capability', error: true };
         return { content: JSON.stringify(deps.nodes.byCapability(cap)) };
+      }
+    },
+    // ===== v2.4 additions =====
+    {
+      name: 'longterm.byDate',
+      description: 'Return MEMORY.md facts logged on a specific date (YYYY-MM-DD).',
+      tags: ['read', 'memory', 'longterm'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.byDate: not configured', error: true };
+        const date = input.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { content: 'longterm.byDate: invalid date (YYYY-MM-DD)', error: true };
+        return { content: JSON.stringify(await deps.longterm.byDate(date)) };
+      }
+    },
+    {
+      name: 'daily.summary',
+      description: 'Summary stats for the daily log directory: { dates, bytes }.',
+      tags: ['read', 'memory', 'log'],
+      execute: async () => {
+        if (!deps.dailyLog) return { content: 'daily.summary: not configured', error: true };
+        return { content: JSON.stringify(await deps.dailyLog.summary()) };
+      }
+    },
+    {
+      name: 'hooks.byEvent',
+      description: 'List hooks registered for a specific event name.',
+      tags: ['read', 'hooks'],
+      execute: (input) => {
+        if (!deps.hooks) return { content: 'hooks.byEvent: not configured', error: true };
+        const event = input.trim();
+        if (!event) return { content: 'hooks.byEvent: empty event', error: true };
+        return { content: JSON.stringify(deps.hooks.byEvent(event)) };
+      }
+    },
+    {
+      name: 'hooks.size',
+      description: 'Total number of registered hooks across all events.',
+      tags: ['read', 'hooks'],
+      execute: () => {
+        if (!deps.hooks) return { content: 'hooks.size: not configured', error: true };
+        return { content: String(deps.hooks.size()) };
       }
     },
     {

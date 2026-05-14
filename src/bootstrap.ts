@@ -78,13 +78,14 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
   // builtin tools see them via the deps closure (mutable refs).
-  const lazyDeps: { subagent?: SubAgentRunner; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
+  const lazyDeps: { subagent?: SubAgentRunner; hooks?: HookRunner; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
   for (const tool of buildBuiltinTools({
     memories,
     longterm,
     dailyLog,
     nodes,
     get subagent() { return lazyDeps.subagent; },
+    get hooks() { return lazyDeps.hooks; },
     get skillsLoader() { return lazyDeps.skillsRef; }
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
@@ -205,8 +206,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     { on: (event, handler) => gateway.events.on(event as Parameters<typeof gateway.events.on>[0], handler as never) },
     logger.child('hooks')
   );
+  lazyDeps.hooks = hooks;
   // Hold a reference so the variable is always considered used.
-  void hooks;
   void compactor;
 
   // Daily-log hook: append every received/replied event to today's daily log.

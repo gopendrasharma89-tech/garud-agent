@@ -60,6 +60,15 @@ export class HookRunner {
     return n;
   }
 
+  /** Return all hooks registered for a specific event. */
+  byEvent(event: string): Array<{ name: string; fired: number; errors: number }> {
+    const list = this.hooks.get(event) ?? [];
+    return list.map((h) => {
+      const s = this.stats.get(h.name) ?? { fired: 0, errors: 0 };
+      return { name: h.name, fired: s.fired, errors: s.errors };
+    });
+  }
+
   /** Reset stats counters without unregistering hooks. */
   resetStats(): void {
     for (const k of this.stats.keys()) this.stats.set(k, { fired: 0, errors: 0 });
