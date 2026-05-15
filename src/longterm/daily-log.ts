@@ -39,8 +39,8 @@ export class DailyLog {
     } catch { return []; }
   }
 
-  /** Summary stats: count of dates and bytes used. */
-  async summary(): Promise<{ dates: number; bytes: number }> {
+  /** Summary stats: count of dates, bytes used, and latest date (if any). */
+  async summary(): Promise<{ dates: number; bytes: number; latest?: string }> {
     try {
       const dates = await this.listDates();
       let bytes = 0;
@@ -50,9 +50,22 @@ export class DailyLog {
           bytes += stat.size;
         } catch { /* skip missing */ }
       }
-      return { dates: dates.length, bytes };
+      return dates.length > 0
+        ? { dates: dates.length, bytes, latest: dates[0] }
+        : { dates: 0, bytes: 0 };
     } catch {
       return { dates: 0, bytes: 0 };
     }
+  }
+
+  /** Read the last N daily logs combined (newest first), separated by date headers. */
+  async latest(n: number): Promise<string> {
+    const dates = (await this.listDates()).slice(0, Math.max(1, Math.min(365, n)));
+    const parts: string[] = [];
+    for (const date of dates) {
+      const body = await this.read(date);
+      if (body) parts.push(`# ${date}\n${body}`);
+    }
+    return parts.join('\n');
   }
 }

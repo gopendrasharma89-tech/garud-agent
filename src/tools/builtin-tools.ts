@@ -1664,6 +1664,39 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         return { content: String(deps.hooks.size()) };
       }
     },
+    // ===== v2.5 additions =====
+    {
+      name: 'daily.latest',
+      description: 'Combined markdown of the last N daily logs (newest first). Input: optional N (default 3).',
+      tags: ['read', 'memory', 'log'],
+      execute: async (input) => {
+        if (!deps.dailyLog) return { content: 'daily.latest: not configured', error: true };
+        const trimmed = input.trim();
+        const n = trimmed === '' ? 3 : parseInt(trimmed, 10);
+        if (!Number.isFinite(n) || n < 1) return { content: 'daily.latest: invalid N', error: true };
+        const body = await deps.dailyLog.latest(n);
+        return { content: body || '(no daily logs yet)' };
+      }
+    },
+    {
+      name: 'longterm.replace',
+      description: 'Replace the entire MEMORY.md body. Input: full markdown text.',
+      tags: ['write', 'memory', 'longterm', 'destructive'],
+      execute: async (input) => {
+        if (!deps.longterm) return { content: 'longterm.replace: not configured', error: true };
+        await deps.longterm.replace(input);
+        return { content: `replaced; new size ${deps.longterm.size()} bytes` };
+      }
+    },
+    {
+      name: 'agent.pending',
+      description: 'Number of sub-agent jobs in pending or running state.',
+      tags: ['read', 'subagent'],
+      execute: () => {
+        if (!deps.subagent) return { content: 'agent.pending: not configured', error: true };
+        return { content: String(deps.subagent.pending()) };
+      }
+    },
     {
       name: 'array.head',
       description: 'First N items of a JSON array. Input: "<json>::<n>".',

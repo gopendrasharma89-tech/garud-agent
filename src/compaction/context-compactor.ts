@@ -71,6 +71,11 @@ export class ContextCompactor {
     };
   }
 
+  /** Convenience wrapper: returns compacted turn array directly (no metadata). */
+  applyTo(turns: Turn[]): Turn[] {
+    return this.plan(turns).kept;
+  }
+
   /** Heuristic summarizer: extracts user requests + assistant decisions. */
   private summarize(turns: Turn[]): string {
     if (turns.length === 0) return '';

@@ -445,6 +445,22 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, ...(await deps.dailyLog.summary()) });
       }
 
+      if (req.method === 'GET' && url.pathname === '/daily/latest') {
+        if (!deps.dailyLog) return send(res, 503, { ok: false, error: 'daily-log not configured' });
+        const n = Math.max(1, Math.min(365, parseInt(url.searchParams.get('n') ?? '3', 10)));
+        return send(res, 200, { ok: true, n, body: await deps.dailyLog.latest(n) });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/longterm/replace') {
+        if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
+        let payload: { body?: string };
+        try { payload = (await readJson<{ body?: string }>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body (string) required' });
+        await deps.longterm.replace(payload.body);
+        return send(res, 200, { ok: true, bytes: deps.longterm.size() });
+      }
+
       const hooksByEventMatch = req.method === 'GET' && /^\/hooks\/event\/[^/]+$/.test(url.pathname);
       if (hooksByEventMatch) {
         if (!deps.hooks) return send(res, 503, { ok: false, error: 'hooks not configured' });

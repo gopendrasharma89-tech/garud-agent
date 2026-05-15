@@ -129,11 +129,20 @@ export class LongTermMemory {
     return indexed.slice(0, clamped).map(({ entry }) => entry);
   }
 
-  /** Return facts logged on a specific date (YYYY-MM-DD). */
+  /** Return facts logged on a specific date (YYYY-MM-DD). Iterates full body so no 1000-fact cap. */
   async byDate(date: string): Promise<Array<{ section: string; fact: string }>> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
-    const all = await this.history(1000);
-    return all.filter((h) => h.date === date).map(({ section, fact }) => ({ section, fact }));
+    const body = await this.read();
+    if (!body) return [];
+    const out: Array<{ section: string; fact: string }> = [];
+    let section = 'general';
+    const re = new RegExp(`^-\\s+${date}:\\s*(.*)$`);
+    for (const raw of body.split('\n')) {
+      if (raw.startsWith('## ')) { section = raw.slice(3).trim(); continue; }
+      const m = re.exec(raw);
+      if (m) out.push({ section, fact: m[1]! });
+    }
+    return out;
   }
 
   /** List all section names found in MEMORY.md (preserves file order). */
