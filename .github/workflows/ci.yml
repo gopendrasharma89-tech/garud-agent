@@ -7,22 +7,46 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  test:
+    name: Build & test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [20.x, 22.x]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Set up Node ${{ matrix.node }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
-      - name: TypeScript build
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint (strict TS type check)
+        run: npm run lint
+      - name: Build
         run: npm run build
       - name: Run tests
         run: npm test
-      - name: Lint (no-emit type check)
-        run: npm run lint
+      - name: Verify CLI
+        run: |
+          node dist/cli/main.js version
+          node dist/cli/main.js tools | head -20
+          node dist/cli/main.js doctor || true
+
+  audit-quality:
+    name: Repository quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required files present
+        run: |
+          test -f README.md
+          test -f CHANGELOG.md
+          test -f CONTRIBUTING.md
+          test -f SECURITY.md
+          test -f LICENSE
+          test -d docs
+          test -d examples
+          echo "All required repository artifacts present."

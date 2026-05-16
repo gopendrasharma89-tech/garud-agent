@@ -72,8 +72,12 @@ export class LongTermMemory {
     return count;
   }
 
-  /** Replace the entire memory file with a new body. */
+  /** Replace the entire memory file with a new body. Cap: 5 MiB. */
   async replace(body: string): Promise<void> {
+    const MAX_BYTES = 5 * 1024 * 1024;
+    if (Buffer.byteLength(body, 'utf8') > MAX_BYTES) {
+      throw new Error(`MEMORY.md too large (max ${MAX_BYTES} bytes)`);
+    }
     this.cache = body;
     this.dirty = true;
     await this.flush();

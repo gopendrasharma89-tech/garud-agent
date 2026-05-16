@@ -78,7 +78,7 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
   // builtin tools see them via the deps closure (mutable refs).
-  const lazyDeps: { subagent?: SubAgentRunner; hooks?: HookRunner; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
+  const lazyDeps: { subagent?: SubAgentRunner; hooks?: HookRunner; auditSink?: InMemoryAuditLog; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
   for (const tool of buildBuiltinTools({
     memories,
     longterm,
@@ -86,6 +86,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     nodes,
     get subagent() { return lazyDeps.subagent; },
     get hooks() { return lazyDeps.hooks; },
+    compactor,
+    get auditSink() { return lazyDeps.auditSink; },
     get skillsLoader() { return lazyDeps.skillsRef; }
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
@@ -140,6 +142,7 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const audit = new AuditLogger();
   const inMemoryAudit = new InMemoryAuditLog();
   audit.addSink(inMemoryAudit);
+  lazyDeps.auditSink = inMemoryAudit;
 
   let store: JsonFileStore | undefined;
   if (config.storage.persistent) {

@@ -454,11 +454,35 @@ export function createServer(deps: ServerDeps): http.Server {
       if (req.method === 'POST' && url.pathname === '/longterm/replace') {
         if (!deps.longterm) return send(res, 503, { ok: false, error: 'longterm not configured' });
         let payload: { body?: string };
-        try { payload = (await readJson<{ body?: string }>(req)).payload; }
-        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        try { payload = (await readJson<{ body?: string }>(req, 6 * 1024 * 1024)).payload; }
+        catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return send(res, /payload too large/.test(msg) ? 413 : 400, { ok: false, error: msg });
+        }
         if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body (string) required' });
-        await deps.longterm.replace(payload.body);
+        try {
+          await deps.longterm.replace(payload.body);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return send(res, 413, { ok: false, error: msg });
+        }
         return send(res, 200, { ok: true, bytes: deps.longterm.size() });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/audit/kinds') {
+        const sink = gateway.audit?.getInMemorySink();
+        if (!sink) return send(res, 503, { ok: false, error: 'audit not configured' });
+        const kinds = new Set<string>();
+        for (const entry of sink.list({ limit: 10_000 })) kinds.add(entry.kind);
+        return send(res, 200, { ok: true, kinds: [...kinds].sort() });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/audit/count') {
+        const sink = gateway.audit?.getInMemorySink();
+        if (!sink) return send(res, 503, { ok: false, error: 'audit not configured' });
+        const counts: Record<string, number> = {};
+        for (const entry of sink.list({ limit: 10_000 })) counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+        return send(res, 200, { ok: true, counts });
       }
 
       const hooksByEventMatch = req.method === 'GET' && /^\/hooks\/event\/[^/]+$/.test(url.pathname);

@@ -14,6 +14,8 @@ export interface BuiltinToolDeps {
   subagent?: import('../subagent/subagent-runner.js').SubAgentRunner;
   nodes?: import('../nodes/node-registry.js').NodeRegistry;
   hooks?: import('../hooks/hook-runner.js').HookRunner;
+  compactor?: import('../compaction/context-compactor.js').ContextCompactor;
+  auditSink?: { list(filter?: { limit?: number; kind?: string }): Array<{ kind: string; ts: number }> };
   skillsLoader?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined };
 }
 
@@ -1695,6 +1697,81 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       execute: () => {
         if (!deps.subagent) return { content: 'agent.pending: not configured', error: true };
         return { content: String(deps.subagent.pending()) };
+      }
+    },
+    // ===== v2.6 additions =====
+    {
+      name: 'skills.match',
+      description: 'Find loaded skills with token overlap to input text. Input: text or empty.',
+      tags: ['read', 'skill'],
+      execute: (input) => {
+        if (!deps.skillsLoader) return { content: 'skills.match: not configured', error: true };
+        const text = input.trim().toLowerCase();
+        if (!text) return { content: JSON.stringify(deps.skillsLoader.list()) };
+        const tokens = new Set(text.split(/\s+/).filter((t) => t.length > 2));
+        const scored = deps.skillsLoader.list().map((s) => {
+          const hay = (s.name + ' ' + s.description).toLowerCase();
+          let score = 0;
+          for (const t of tokens) if (hay.includes(t)) score += 1;
+          return { ...s, score };
+        }).filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+        return { content: JSON.stringify(scored) };
+      }
+    },
+    {
+      name: 'audit.kinds',
+      description: 'Distinct audit kinds present in the in-memory audit log.',
+      tags: ['read', 'audit'],
+      execute: () => {
+        const sink = deps.auditSink;
+        if (!sink) return { content: 'audit.kinds: not configured', error: true };
+        const kinds = new Set<string>();
+        for (const entry of sink.list({ limit: 10_000 })) kinds.add(entry.kind);
+        return { content: JSON.stringify([...kinds].sort()) };
+      }
+    },
+    {
+      name: 'audit.count',
+      description: 'Counters by audit kind across the in-memory audit log.',
+      tags: ['read', 'audit'],
+      execute: () => {
+        const sink = deps.auditSink;
+        if (!sink) return { content: 'audit.count: not configured', error: true };
+        const counts: Record<string, number> = {};
+        for (const entry of sink.list({ limit: 10_000 })) counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+        return { content: JSON.stringify(counts) };
+      }
+    },
+    {
+      name: 'compactor.plan',
+      description: 'Dry-run context compaction on a JSON array of turns: [{role,content,importance?}].',
+      tags: ['read', 'compaction'],
+      execute: (input) => {
+        if (!deps.compactor) return { content: 'compactor.plan: not configured', error: true };
+        try {
+          const turns = JSON.parse(input);
+          if (!Array.isArray(turns)) return { content: 'compactor.plan: not an array', error: true };
+          return { content: JSON.stringify(deps.compactor.plan(turns)) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `compactor.plan error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'compactor.size',
+      description: 'Return character size of a JSON turn array (compactor budget metric).',
+      tags: ['read', 'compaction'],
+      execute: (input) => {
+        if (!deps.compactor) return { content: 'compactor.size: not configured', error: true };
+        try {
+          const turns = JSON.parse(input);
+          if (!Array.isArray(turns)) return { content: 'compactor.size: not an array', error: true };
+          return { content: String(deps.compactor.size(turns)) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `compactor.size error: ${msg}`, error: true };
+        }
       }
     },
     {

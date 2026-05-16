@@ -1,16 +1,16 @@
 # 🦅 Garud Agent
 
 [![CI](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-479%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
+[![Tests](https://img.shields.io/badge/tests-488%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![Tools](https://img.shields.io/badge/tools-128-purple)]()
+[![Tools](https://img.shields.io/badge/tools-133-purple)]()
 [![Deps](https://img.shields.io/badge/runtime%20deps-0-success)]()
 
-A **local-first**, **policy-aware**, **multi-channel** agent gateway with **OpenClaw-inspired** architecture: file-based persistent memory (`MEMORY.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, pluggable LLM brains, 128 built-in tools, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
+A **local-first**, **policy-aware**, **multi-channel** agent gateway with **OpenClaw-inspired** architecture: file-based persistent memory (`MEMORY.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, pluggable LLM brains, 133 built-in tools, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
-> **Version:** 2.5.0 "Jatayu" · Released 2026-05-15
+> **Version:** 2.6.0 "Rajasinha" · Released 2026-05-16
 
 ## ✨ OpenClaw-inspired subsystems (v2.0)
 
@@ -25,7 +25,7 @@ A **local-first**, **policy-aware**, **multi-channel** agent gateway with **Open
 ## 🚀 Highlights
 
 - 🧠 **Pluggable LLM brain** — `deterministic` (built-in) or any OpenAI-compatible endpoint
-- 🛠️ **128 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills
+- 🛠️ **133 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills
 - 🌐 **20+ HTTP endpoints** — REST + Server-Sent Events streaming
 - 🔌 **WebSocket server** with auth, ping/pong, broadcast
 - 🔐 **Signed webhooks** (HMAC-SHA256) with constant-time verification
@@ -43,14 +43,14 @@ git clone https://github.com/gopendrasharma89-tech/garud-agent.git
 cd garud-agent
 npm install
 npm run build
-npm test                    # 479 tests pass
+npm test                    # 488 tests pass
 npm start                   # boot HTTP server on :3010
 ```
 
 CLI:
 ```bash
 npm run cli help            # list commands
-npm run cli version         # garud-agent 2.5.0
+npm run cli version         # garud-agent 2.6.0
 npm run cli tools           # list all 104 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL
@@ -66,7 +66,7 @@ npm run cli repl            # interactive REPL
         ─────────            ▼                       ToolRegistry
         http, console,  Sessions · Memory                  │
         broadcast,      Conversation · Audit               ▼
-        webhook         RateLimit · Quotas         128 built-in tools
+        webhook         RateLimit · Quotas         133 built-in tools
                         Pairing · CircuitBreaker          + plugins
                         Scheduler · Cache                 + skills
                         ───────────────────
