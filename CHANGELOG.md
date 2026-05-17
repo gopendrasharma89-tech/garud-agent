@@ -1,45 +1,61 @@
 # Changelog
 
-## [2.6.0] — 2026-05-16 — "Rajasinha"
+## [3.0.0] — 2026-05-17 — "Skyforge"
 
-Bug fixes + 5 new tools + 3 new HTTP endpoints + comprehensive repository polish.
+Major release: working channel adapters (WhatsApp, Telegram, Discord), OpenClaw-style workspace files (SOUL.md / USER.md / AGENTS.md), heartbeat subsystem, mascot, and globalized branding.
 
-### Bug fixes
-- `LongTermMemory.replace` had no size cap; now enforces 5 MiB limit and throws on overflow
-- `POST /longterm/replace` accepted unbounded payloads; now caps at 6 MiB and returns 413 on overflow
-- Audit log had no HTTP introspection endpoint despite being a key debugging surface
+### Channel adapters (3 new)
+- **WhatsApp Cloud API** — `POST /channel/whatsapp` accepts Meta webhook payloads
+- **Telegram Bot API** — `POST /channel/telegram` accepts updates from `setWebhook`
+- **Discord interactions + webhook** — `POST /channel/discord` handles slash commands, button callbacks, and webhook messages (with auto PING/PONG)
 
-### New subsystem features
-- `LongTermMemory.replace` — 5 MiB size cap with descriptive error
-- `ContextCompactor` wired into `BuiltinToolDeps` for tool-driven planning
-- In-memory audit sink exposed to tools via `BuiltinToolDeps.auditSink`
+All three are zero-dependency — they parse the platform's raw JSON without any external SDK.
 
-### New HTTP endpoints (2)
-- `GET /audit/kinds` — distinct kinds present in the audit log
-- `GET /audit/count` — counter per audit kind
-- `POST /longterm/replace` — now returns 413 with clear error on oversized body
+### OpenClaw-style workspace files
+- **`SOUL.md`** — agent personality, voice, boundaries (default scaffold provided)
+- **`USER.md`** — per-user profile facts under `workspace/users/<userId>.md`
+- **`AGENTS.md`** — declarative agent roster (default + scribe + planner + ops)
+- **`WorkspaceFiles`** subsystem with size caps (256 KiB SOUL/AGENTS, 64 KiB USER) and userId sanitization
 
-### New tools (+5 → 133 total)
-- `skills.match` — find skills by token overlap with input
-- `audit.kinds` — list distinct audit kinds
-- `audit.count` — counter per kind
-- `compactor.plan` — dry-run compaction plan
-- `compactor.size` — character size of a turn array
+### Heartbeat subsystem
+- **`Heartbeat`** — periodic self-check (default 60s) emitting `{uptimeSec, rssBytes, heapUsedBytes, pendingSubAgents, notes}`
+- Listeners + probes API for proactive behavior
+- `start()`/`stop()` idempotent with `unref()` so it never blocks process exit
+- HTTP: `GET /heartbeat`, `POST /heartbeat/beat`
 
-### Repository improvements
-- **`SECURITY.md`** — supported versions, vulnerability reporting, hardening guidance
-- **`docs/architecture.md`** — architecture diagram, OpenClaw subsystem catalog, persistence layout
-- **`examples/javascript-client.md`** — minimal HTTP, SSE, WebSocket, long-term, audit replay, signed webhook recipes
-- **CI workflow** — expanded with strict-TS lint, CLI smoke test, repository quality gate
-- **GitHub repo** — topics + enriched description (set via API)
+### Mascot
+- ASCII-art falcon "Skyforge" with optional ANSI color (auto-detects TTY)
+- `garud mascot` and `garud --help` show the mascot
+- `mascot()` and `mascotInline()` exports
+
+### Globalized branding
+- Codename system shifted from Sanskrit bird names (Garuda, Pakshiraj, Suparna, Vinata, Aruna, Sampati, Jatayu, Rajasinha) to globally-neutral "Skyforge" for v3.0 and onward
+- Keeps the project name **Garud** (the falcon identity) — universal mythological bird across multiple cultures
+- Docs/comments rewritten for international readability
+
+### New HTTP endpoints (10)
+- `POST /channel/whatsapp`, `/channel/telegram`, `/channel/discord`
+- `GET /heartbeat`, `POST /heartbeat/beat`
+- `GET /soul`, `POST /soul`
+- `GET /agents.md`
+- `GET /user/:userId`, `POST /user/:userId`, `GET /users`
+
+### New tools (+7 → 140 total)
+- `soul.read`, `soul.write`
+- `user.read`, `user.write`
+- `agents.read`
+- `heartbeat.status`, `heartbeat.beat`
 
 ### Stats
-- **488 tests pass** across 43 suites in ~14 s
-- **45 source files**, **43 test files**, **13,754 lines** of TypeScript
+- **516 tests pass** across 45 suites in ~14 s
+- **51 source files**, **45 test files**, **14,698 lines** of TypeScript
 - Strict TypeScript, zero runtime dependencies
 
+## [2.6.0] — "Rajasinha" · 133 tools · 488 tests
+Audit endpoints, repository polish (SECURITY.md, docs/architecture.md, examples/javascript-client.md), size caps.
+
 ## [2.5.0] — "Jatayu" · 128 tools · 479 tests
-Uncapped `byDate`, `daily.latest`, `longterm.replace`. 3 new tools, 2 new HTTP endpoints.
+Uncapped `byDate`, `daily.latest`, `longterm.replace`.
 
 ## [2.4.0] — "Sampati" · 125 tools · 465 tests
 Daily-log endpoints + sort stability fix.
@@ -59,26 +75,5 @@ OpenClaw-inspired architecture: LongTermMemory, DailyLog, SubAgentRunner, NodeRe
 ## [1.0.0] — "Garuda" · 95 tools · 392 tests
 First stable release with CI, docs, examples.
 
-## [0.9.0] — "Shakti" · 84 tools · 381 tests
-Type-aware set ops, stricter validators.
-
-## [0.8.0] — "Tej" · 71 tools · 361 tests
-Fix `::` parsing bugs, validators added.
-
-## [0.7.0] — "Vajra" · 58 tools · 341 tests
-Word-boundary SSE chunking, `/api/version`.
-
-## [0.6.0] · 48 tools · 320 tests
-`/live`, `/slo`, `/audit/export`, `/sessions/:id/forget`.
-
-## [0.5.0] · 39 tools · 298 tests
-Quotas, webhook HMAC, conversation store, memory pinning/TTL.
-
-## [0.4.0] · 27 tools · 245 tests
-WebSocket, tool cache, circuit breaker, Prometheus metrics, dashboard.
-
-## [0.3.0] · 17 tools · 199 tests
-Pairing, cron scheduler, plugin/skills loaders.
-
-## [0.2.0] · 10 tools · 90 tests
-Pluggable brain providers, audit log, rate limiter.
+## [0.2.0 — 0.9.0]
+Foundational layers: brain providers, memory store, audit log, rate limiter, WebSocket, cache, circuit breaker, Prometheus metrics, dashboard, pairing, scheduler, plugins, skills, quotas, webhook HMAC, conversation store.

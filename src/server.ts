@@ -25,6 +25,8 @@ export interface ServerDeps {
   subagent?: import('./subagent/subagent-runner.js').SubAgentRunner;
   nodes?: import('./nodes/node-registry.js').NodeRegistry;
   hooks?: import('./hooks/hook-runner.js').HookRunner;
+  workspace?: import('./workspace/workspace-files.js').WorkspaceFiles;
+  heartbeat?: import('./heartbeat/heartbeat.js').Heartbeat;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -483,6 +485,126 @@ export function createServer(deps: ServerDeps): http.Server {
         const counts: Record<string, number> = {};
         for (const entry of sink.list({ limit: 10_000 })) counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
         return send(res, 200, { ok: true, counts });
+      }
+
+      // ===== v3.0: heartbeat + workspace endpoints =====
+      if (req.method === 'GET' && url.pathname === '/heartbeat') {
+        if (!deps.heartbeat) return send(res, 503, { ok: false, error: 'heartbeat not configured' });
+        const latest = deps.heartbeat.latest();
+        return send(res, 200, {
+          ok: true,
+          running: deps.heartbeat.isRunning(),
+          samples: deps.heartbeat.count(),
+          latest
+        });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/heartbeat/beat') {
+        if (!deps.heartbeat) return send(res, 503, { ok: false, error: 'heartbeat not configured' });
+        return send(res, 200, { ok: true, sample: await deps.heartbeat.beat() });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/soul') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return send(res, 200, { ok: true, body: await deps.workspace.readSoul() });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/soul') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        let payload: { body?: string };
+        try { payload = (await readJson<{ body?: string }>(req, 300 * 1024)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body required' });
+        try { await deps.workspace.writeSoul(payload.body); }
+        catch (error) {
+          return send(res, 413, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return send(res, 200, { ok: true });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/agents.md') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return send(res, 200, { ok: true, body: await deps.workspace.readAgents() });
+      }
+
+      const userReadMatch = req.method === 'GET' && /^\/user\/[^/]+$/.test(url.pathname);
+      if (userReadMatch) {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        const userId = decodeURIComponent(url.pathname.split('/')[2]!);
+        return send(res, 200, { ok: true, userId, body: await deps.workspace.readUser(userId) });
+      }
+
+      const userWriteMatch = req.method === 'POST' && /^\/user\/[^/]+$/.test(url.pathname);
+      if (userWriteMatch) {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        const userId = decodeURIComponent(url.pathname.split('/')[2]!);
+        let payload: { body?: string };
+        try { payload = (await readJson<{ body?: string }>(req, 80 * 1024)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body required' });
+        try { await deps.workspace.writeUser(userId, payload.body); }
+        catch (error) {
+          return send(res, 413, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+        return send(res, 200, { ok: true, userId });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/users') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return send(res, 200, { ok: true, users: await deps.workspace.listUsers() });
+      }
+
+      // ===== v3.0: channel adapters =====
+      if (req.method === 'POST' && url.pathname === '/channel/whatsapp') {
+        const { parseWhatsApp } = await import('./channels/adapters/whatsapp-adapter.js');
+        let payload: unknown;
+        try { payload = (await readJson<unknown>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        const msgs = parseWhatsApp(payload);
+        const accepted: string[] = [];
+        for (const m of msgs) {
+          try {
+            const detail = await gateway.handleDetailed({ ...m, requestId });
+            accepted.push(detail.requestId);
+          } catch { /* skip per-message failures */ }
+        }
+        return send(res, 200, { ok: true, accepted });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/channel/telegram') {
+        const { parseTelegram } = await import('./channels/adapters/telegram-adapter.js');
+        let payload: unknown;
+        try { payload = (await readJson<unknown>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        const msgs = parseTelegram(payload);
+        const accepted: string[] = [];
+        for (const m of msgs) {
+          try {
+            const detail = await gateway.handleDetailed({ ...m, requestId });
+            accepted.push(detail.requestId);
+          } catch { /* skip */ }
+        }
+        return send(res, 200, { ok: true, accepted });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/channel/discord') {
+        const { parseDiscord } = await import('./channels/adapters/discord-adapter.js');
+        let payload: unknown;
+        try { payload = (await readJson<unknown>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        // Discord pings interactions endpoint with type=1 PING; respond with type=1 pong.
+        if ((payload as { type?: number })?.type === 1) {
+          return send(res, 200, { type: 1 });
+        }
+        const msgs = parseDiscord(payload);
+        const accepted: string[] = [];
+        for (const m of msgs) {
+          try {
+            const detail = await gateway.handleDetailed({ ...m, requestId });
+            accepted.push(detail.requestId);
+          } catch { /* skip */ }
+        }
+        return send(res, 200, { ok: true, accepted });
       }
 
       const hooksByEventMatch = req.method === 'GET' && /^\/hooks\/event\/[^/]+$/.test(url.pathname);

@@ -24,6 +24,8 @@ import { SubAgentRunner } from './subagent/subagent-runner.js';
 import { NodeRegistry } from './nodes/node-registry.js';
 import { HookRunner } from './hooks/hook-runner.js';
 import { ContextCompactor } from './compaction/context-compactor.js';
+import { WorkspaceFiles } from './workspace/workspace-files.js';
+import { Heartbeat } from './heartbeat/heartbeat.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -54,6 +56,8 @@ export interface BootstrapResult {
   nodes: NodeRegistry;
   hooks: HookRunner;
   compactor: ContextCompactor;
+  workspace: WorkspaceFiles;
+  heartbeat: Heartbeat;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -74,11 +78,12 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const dailyLog = new DailyLog(path.join(config.storage.workspaceDir, 'logs'));
   const nodes = new NodeRegistry();
   const compactor = new ContextCompactor();
+  const workspace = new WorkspaceFiles(config.storage.workspaceDir);
 
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
   // builtin tools see them via the deps closure (mutable refs).
-  const lazyDeps: { subagent?: SubAgentRunner; hooks?: HookRunner; auditSink?: InMemoryAuditLog; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
+  const lazyDeps: { subagent?: SubAgentRunner; hooks?: HookRunner; heartbeat?: Heartbeat; auditSink?: InMemoryAuditLog; skillsRef?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined } } = {};
   for (const tool of buildBuiltinTools({
     memories,
     longterm,
@@ -87,6 +92,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     get subagent() { return lazyDeps.subagent; },
     get hooks() { return lazyDeps.hooks; },
     compactor,
+    workspace,
+    get heartbeat() { return lazyDeps.heartbeat; },
     get auditSink() { return lazyDeps.auditSink; },
     get skillsLoader() { return lazyDeps.skillsRef; }
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
@@ -277,10 +284,13 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     }
   }
 
+  const heartbeat = new Heartbeat(60_000, () => subagent.pending(), logger.child('heartbeat'));
+  lazyDeps.heartbeat = heartbeat;
+
   return {
     gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
     inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
-    longterm, dailyLog, subagent, nodes, hooks, compactor
+    longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat
   };
 }
 

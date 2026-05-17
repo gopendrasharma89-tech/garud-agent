@@ -6,8 +6,9 @@ import { bootstrap } from '../bootstrap.js';
 import { defaultConfig, loadConfigFile, mergeConfig, validateConfig } from '../config.js';
 import { TrustLevel } from '../types.js';
 import { GARUD_VERSION } from '../version.js';
+import { mascot } from '../mascot.js';
 
-const HELP = `Garud Agent CLI v0.6
+const HELP = `Garud Agent CLI v3.0
 
 Usage:
   garud chat   [--user <id>] [--trust <level>] [--agent <id>] <text...>
@@ -78,7 +79,11 @@ async function main(): Promise<void> {
   const config = mergeConfig(defaultConfig, fileConfig);
 
   if (args.command === 'help' || args.command === '--help' || args.command === '-h') {
-    process.stdout.write(HELP);
+    process.stdout.write(mascot() + '\n\n' + HELP);
+    return;
+  }
+  if (args.command === 'mascot') {
+    process.stdout.write(mascot() + '\n');
     return;
   }
   if (args.command === 'version') {

@@ -15,6 +15,8 @@ export interface BuiltinToolDeps {
   nodes?: import('../nodes/node-registry.js').NodeRegistry;
   hooks?: import('../hooks/hook-runner.js').HookRunner;
   compactor?: import('../compaction/context-compactor.js').ContextCompactor;
+  workspace?: import('../workspace/workspace-files.js').WorkspaceFiles;
+  heartbeat?: import('../heartbeat/heartbeat.js').Heartbeat;
   auditSink?: { list(filter?: { limit?: number; kind?: string }): Array<{ kind: string; ts: number }> };
   skillsLoader?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined };
 }
@@ -1756,6 +1758,88 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           const msg = error instanceof Error ? error.message : String(error);
           return { content: `compactor.plan error: ${msg}`, error: true };
         }
+      }
+    },
+    {
+      name: 'soul.read',
+      description: 'Read the agent SOUL.md file (personality, voice, boundaries).',
+      tags: ['read', 'workspace'],
+      execute: async () => {
+        if (!deps.workspace) return { content: 'soul.read: not configured', error: true };
+        return { content: await deps.workspace.readSoul() };
+      }
+    },
+    {
+      name: 'soul.write',
+      description: 'Replace the agent SOUL.md (max 256 KiB).',
+      tags: ['write', 'workspace'],
+      execute: async (input) => {
+        if (!deps.workspace) return { content: 'soul.write: not configured', error: true };
+        try { await deps.workspace.writeSoul(input); return { content: 'ok' }; }
+        catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `soul.write error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'user.read',
+      description: 'Read USER.md for a given userId.',
+      tags: ['read', 'workspace'],
+      execute: async (input) => {
+        if (!deps.workspace) return { content: 'user.read: not configured', error: true };
+        const userId = input.trim();
+        if (!userId) return { content: 'user.read: empty userId', error: true };
+        return { content: await deps.workspace.readUser(userId) };
+      }
+    },
+    {
+      name: 'user.write',
+      description: 'Write USER.md for a userId. Input: "<userId>::<markdown body>".',
+      tags: ['write', 'workspace'],
+      execute: async (input) => {
+        if (!deps.workspace) return { content: 'user.write: not configured', error: true };
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'user.write: needs <userId>::<body>', error: true };
+        try {
+          await deps.workspace.writeUser(input.slice(0, sep), input.slice(sep + 2));
+          return { content: 'ok' };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `user.write error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'agents.read',
+      description: 'Read the AGENTS.md roster.',
+      tags: ['read', 'workspace'],
+      execute: async () => {
+        if (!deps.workspace) return { content: 'agents.read: not configured', error: true };
+        return { content: await deps.workspace.readAgents() };
+      }
+    },
+    {
+      name: 'heartbeat.status',
+      description: 'Get the latest heartbeat sample (uptime, memory, pending sub-agents).',
+      tags: ['read', 'heartbeat'],
+      execute: () => {
+        if (!deps.heartbeat) return { content: 'heartbeat.status: not configured', error: true };
+        const latest = deps.heartbeat.latest();
+        return { content: JSON.stringify({
+          running: deps.heartbeat.isRunning(),
+          samples: deps.heartbeat.count(),
+          latest
+        }) };
+      }
+    },
+    {
+      name: 'heartbeat.beat',
+      description: 'Force an immediate heartbeat sample. Returns the new sample.',
+      tags: ['write', 'heartbeat'],
+      execute: async () => {
+        if (!deps.heartbeat) return { content: 'heartbeat.beat: not configured', error: true };
+        return { content: JSON.stringify(await deps.heartbeat.beat()) };
       }
     },
     {
