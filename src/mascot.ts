@@ -19,9 +19,16 @@ export interface MascotOptions {
   tagline?: boolean;
 }
 
+/** Detect whether color output is appropriate. Honors NO_COLOR per the spec at https://no-color.org. */
+function shouldUseColor(explicit: boolean | undefined): boolean {
+  if (explicit !== undefined) return explicit;
+  if (typeof process !== 'undefined' && process.env && process.env.NO_COLOR !== undefined) return false;
+  return Boolean(process.stdout && process.stdout.isTTY);
+}
+
 /** Returns the Skyforge mascot as a multi-line string. */
 export function mascot(opts: MascotOptions = {}): string {
-  const useColor = opts.color ?? Boolean(process.stdout && process.stdout.isTTY);
+  const useColor = shouldUseColor(opts.color);
   const tagline = opts.tagline ?? true;
 
   const wing = (s: string) => paint(s, '36', useColor);     // cyan
@@ -47,6 +54,6 @@ export function mascot(opts: MascotOptions = {}): string {
 
 /** One-line compact mascot for log prefixes. */
 export function mascotInline(opts: MascotOptions = {}): string {
-  const useColor = opts.color ?? Boolean(process.stdout && process.stdout.isTTY);
+  const useColor = shouldUseColor(opts.color);
   return paint('~< GARUD >~', '36;1', useColor);
 }

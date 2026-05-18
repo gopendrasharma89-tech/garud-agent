@@ -607,6 +607,55 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, accepted });
       }
 
+      if (req.method === 'POST' && url.pathname === '/channel/slack') {
+        const { parseSlack } = await import('./channels/adapters/slack-adapter.js');
+        let payload: unknown;
+        try { payload = (await readJson<unknown>(req)).payload; }
+        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
+        const result = parseSlack(payload);
+        // Slack expects a plain-text challenge response during URL verification.
+        if (result.challenge !== undefined) {
+          return sendText(res, 200, 'text/plain; charset=utf-8', result.challenge);
+        }
+        const accepted: string[] = [];
+        for (const m of result.messages) {
+          try {
+            const detail = await gateway.handleDetailed({ ...m, requestId });
+            accepted.push(detail.requestId);
+          } catch { /* skip */ }
+        }
+        return send(res, 200, { ok: true, accepted });
+      }
+
+      // v3.1: manual session compaction
+      const sessionCompactMatch = req.method === 'POST' && /^\/sessions\/[^/]+\/compact$/.test(url.pathname);
+      if (sessionCompactMatch) {
+        const sessionId = url.pathname.split('/')[2]!;
+        const session = gateway.sessions.get(sessionId);
+        if (!session) return send(res, 404, { ok: false, error: 'session not found' });
+        const conv = gateway.conversation;
+        if (!conv) return send(res, 503, { ok: false, error: 'conversation store not configured' });
+        // ConversationTurn stores both user input and assistant reply per record.
+        // Expand each record into two turns for the compactor.
+        const turns: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }> = [];
+        for (const t of conv.list(sessionId)) {
+          if (t.input) turns.push({ role: 'user', content: t.input });
+          if (t.reply) turns.push({ role: 'assistant', content: t.reply });
+        }
+        const { ContextCompactor } = await import('./compaction/context-compactor.js');
+        const compactor = new ContextCompactor();
+        const plan = compactor.plan(turns);
+        return send(res, 200, {
+          ok: true,
+          sessionId,
+          before: turns.length,
+          after: plan.kept.length,
+          removed: plan.removed,
+          summary: plan.summary || undefined,
+          flushed: plan.flushed
+        });
+      }
+
       const hooksByEventMatch = req.method === 'GET' && /^\/hooks\/event\/[^/]+$/.test(url.pathname);
       if (hooksByEventMatch) {
         if (!deps.hooks) return send(res, 503, { ok: false, error: 'hooks not configured' });

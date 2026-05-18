@@ -95,10 +95,11 @@ export class Heartbeat {
     };
     this.lastSample = sample;
     this.samples += 1;
-    for (const listener of this.listeners) {
+    // Notify all listeners in parallel so a slow listener cannot block others.
+    await Promise.allSettled([...this.listeners].map(async (listener) => {
       try { await listener(sample); }
       catch (error) { this.logger.warn('heartbeat listener failed', { error: String(error) }); }
-    }
+    }));
     return sample;
   }
 }

@@ -100,7 +100,8 @@ describe('v3.0 channel adapters', () => {
       };
       const msgs = parseDiscord(interaction);
       expect(msgs).toHaveLength(1);
-      expect(msgs[0]?.text).toBe('/ask what is the time?');
+      // v3.1: option names are preserved as key=value pairs for clarity.
+      expect(msgs[0]?.text).toBe('/ask q=what is the time?');
       expect(msgs[0]?.userId).toBe('111');
     });
 

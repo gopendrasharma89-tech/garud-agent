@@ -17,6 +17,10 @@ export interface TelegramUpdate {
     from?: { id?: number; username?: string; first_name?: string };
     chat?: { id?: number; type?: string };
     text?: string;
+    caption?: string;
+    photo?: Array<{ file_id?: string }>;
+    voice?: { file_id?: string };
+    document?: { file_id?: string; file_name?: string };
   };
   edited_message?: TelegramUpdate['message'];
   callback_query?: {
@@ -32,18 +36,31 @@ export function parseTelegram(envelope: unknown, defaults: { channel?: string } 
   const channel = defaults.channel ?? 'telegram';
 
   const msg = env.message ?? env.edited_message;
-  if (msg && msg.from?.id !== undefined && typeof msg.text === 'string' && msg.text.length > 0) {
-    return [{
-      channel,
-      userId: String(msg.from.id),
-      text: msg.text,
-      clientId: msg.message_id !== undefined ? `tg-${msg.message_id}` : undefined,
-      metadata: {
-        source: 'telegram',
-        username: msg.from.username,
-        chatId: msg.chat?.id
-      }
-    }];
+  if (msg && msg.from?.id !== undefined) {
+    const text = msg.text ?? msg.caption;
+    // Surface non-text media as descriptive placeholders so downstream
+    // tooling at least sees them; lets the agent acknowledge.
+    let inferred = text;
+    let mediaType: string | undefined;
+    if (!inferred) {
+      if (msg.photo && msg.photo.length > 0) { inferred = '[photo]'; mediaType = 'photo'; }
+      else if (msg.voice?.file_id) { inferred = '[voice]'; mediaType = 'voice'; }
+      else if (msg.document?.file_id) { inferred = `[document: ${msg.document.file_name ?? 'unnamed'}]`; mediaType = 'document'; }
+    }
+    if (inferred && inferred.length > 0) {
+      return [{
+        channel,
+        userId: String(msg.from.id),
+        text: inferred,
+        clientId: msg.message_id !== undefined ? `tg-${msg.message_id}` : undefined,
+        metadata: {
+          source: 'telegram',
+          username: msg.from.username,
+          chatId: msg.chat?.id,
+          ...(mediaType ? { mediaType } : {})
+        }
+      }];
+    }
   }
 
   if (env.callback_query?.from?.id !== undefined && typeof env.callback_query.data === 'string') {

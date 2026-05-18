@@ -1,5 +1,36 @@
 # Changelog
 
+## [3.1.0] — 2026-05-18 — "Talon"
+
+Bug fixes + Slack adapter + outbound channel senders + session compaction endpoint + NO_COLOR support.
+
+### Bug fixes
+- `mascot()` now honors the `NO_COLOR` environment variable (https://no-color.org)
+- `Heartbeat` listeners now fire in parallel via `Promise.allSettled` — slow listeners can no longer block fast ones
+- `parseTelegram` previously dropped non-text messages silently; now surfaces photos/voice/documents/captions as descriptive placeholders with `mediaType` metadata
+- `parseDiscord` slash commands lost option names; now formatted as `/name key=value key2=value2` and adds `commandName` metadata
+
+### New: Slack channel adapter
+- `POST /channel/slack` accepts Slack Events API payloads
+- Handles `url_verification` challenge with plain-text response (Slack-compatible)
+- Filters bot messages and subtype joins to avoid loops
+- Adapter at `src/channels/adapters/slack-adapter.ts`
+
+### New: Outbound channel senders
+- `src/channels/adapters/outbound.ts` exports `sendWhatsApp`, `sendTelegram`, `sendDiscord`, `sendSlack`
+- All zero-dep, use Node's built-in `fetch`
+- Caller supplies the platform's API token / webhook URL
+
+### New: Session compaction endpoint
+- `POST /sessions/:id/compact` — runs `ContextCompactor.plan()` on the session's conversation history and returns `{ before, after, removed, summary, flushed }`
+- 404 for unknown session, 503 if conversation store disabled
+
+### Stats
+- **533 tests pass** across 46 suites in ~16 s
+- **53 source files**, **46 test files**, **15,150 lines** of TypeScript
+- Strict TypeScript, zero runtime dependencies
+
+
 ## [3.0.0] — 2026-05-17 — "Skyforge"
 
 Major release: working channel adapters (WhatsApp, Telegram, Discord), OpenClaw-style workspace files (SOUL.md / USER.md / AGENTS.md), heartbeat subsystem, mascot, and globalized branding.

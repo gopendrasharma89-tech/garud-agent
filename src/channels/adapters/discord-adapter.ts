@@ -37,9 +37,12 @@ export function parseDiscord(envelope: unknown, defaults: { channel?: string } =
   if (interaction.type === 2 && interaction.data?.name) {
     const userId = interaction.member?.user?.id ?? interaction.user?.id;
     if (!userId) return [];
-    const textOption = interaction.data.options?.find((o) => typeof o.value === 'string');
-    const text = textOption?.value !== undefined
-      ? `/${interaction.data.name} ${String(textOption.value)}`
+    // Preserve option names so the agent sees both name and value.
+    const optionsText = (interaction.data.options ?? [])
+      .map((o) => `${o.name ?? '_'}=${typeof o.value === 'string' ? o.value : JSON.stringify(o.value)}`)
+      .join(' ');
+    const text = optionsText
+      ? `/${interaction.data.name} ${optionsText}`
       : `/${interaction.data.name}`;
     return [{
       channel,
@@ -48,7 +51,8 @@ export function parseDiscord(envelope: unknown, defaults: { channel?: string } =
       clientId: interaction.id,
       metadata: {
         source: 'discord-interaction',
-        username: interaction.member?.user?.username ?? interaction.user?.username
+        username: interaction.member?.user?.username ?? interaction.user?.username,
+        commandName: interaction.data.name
       }
     }];
   }
