@@ -1,7 +1,7 @@
 # 🦅 Garud Agent
 
 [![CI](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-533%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
+[![Tests](https://img.shields.io/badge/tests-564%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
@@ -21,7 +21,7 @@
 
 **Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **140 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
-> **Version:** 3.1.0 "Talon" · Released 2026-05-18
+> **Version:** 3.2.0 "Stormwing" · Released 2026-05-19
 
 ## ✨ Channel adapters (v3.0)
 
@@ -43,7 +43,7 @@ workspace/
 ├── users/
 │   └── alice.md       # per-user profile
 └── logs/
-    └── 2026-05-18.md  # daily activity log
+    └── 2026-05-19.md  # daily activity log
 ```
 
 ## ✨ Heartbeat
@@ -60,7 +60,7 @@ The heartbeat subsystem performs periodic self-checks (default 60s) emitting `{u
 - 📊 **Built-in dashboard** at `/` and **Prometheus metrics** at `/metrics`
 - 🧾 **Full audit log** with replay endpoint
 - ⏰ **Cron-style scheduler** for recurring messages
-- 🦅 **Mascot** — `garud mascot` shows the Talon falcon
+- 🦅 **Mascot** — `garud mascot` shows the Stormwing falcon
 - 🪶 **Zero runtime dependencies**, **strict TypeScript**, **516 tests** in ~14 s
 
 ## 🚀 Quick start
@@ -70,7 +70,7 @@ git clone https://github.com/gopendrasharma89-tech/garud-agent.git
 cd garud-agent
 npm install
 npm run build
-npm test                    # 533 tests pass
+npm test                    # 564 tests pass
 npm start                   # boot HTTP server on :3010
 ```
 
@@ -78,7 +78,7 @@ CLI:
 ```bash
 npm run cli help            # list commands (shows mascot too)
 npm run cli mascot          # show just the falcon
-npm run cli version         # garud-agent 3.1.0
+npm run cli version         # garud-agent 3.2.0
 npm run cli tools           # list all 140 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL
@@ -115,7 +115,7 @@ npm run cli repl            # interactive REPL
 |---|---|
 | Source files | 51 |
 | Test files | 45 |
-| Lines of TypeScript | 15,150 |
+| Lines of TypeScript | 16,242 |
 | Built-in tools | 140 |
 | HTTP endpoints | 50+ |
 | Test suites | 45 |

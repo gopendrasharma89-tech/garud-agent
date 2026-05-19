@@ -1,5 +1,39 @@
 # Changelog
 
+## [3.2.0] — 2026-05-19 — "Stormwing"
+
+Major release: **8 new subsystems** that put Garud on par with LangGraph, CrewAI, AutoGen, and LangChain — while keeping zero runtime dependencies.
+
+### Eight new subsystems
+
+| Module | Inspired by | What it does |
+|---|---|---|
+| `src/graph/agent-graph.ts` | LangGraph | DAG-based agent orchestration with conditional edges, state passing, loop bounds |
+| `src/reflection/reflector.ts` | Reflection / self-critique loops | Critique-and-revise cycle with a pluggable strategy |
+| `src/planning/planner.ts` | Plan-and-execute | Heuristic task decomposition with tool-hint inference |
+| `src/embeddings/embedding-store.ts` | Vector databases | TF-IDF + cosine similarity semantic search (no API required) |
+| `src/cost/cost-tracker.ts` | LangChain callbacks | Token / tool-call accounting with USD pricing |
+| `src/tracing/span.ts` | OpenTelemetry | Trace/span model compatible with OTLP-JSON |
+| `src/retry/retry-policy.ts` | Resilience4j | Exponential backoff with jitter + retryable predicate |
+| `src/crew/crew.ts` | CrewAI | Multi-agent collaboration with supervisor / round-robin patterns |
+
+### Highlights
+
+- **AgentGraph** — define an agent flow as nodes + edges with conditional routing, run until `END` or `maxSteps`. Cycles allowed and bounded.
+- **Reflector** — generic critique-and-revise loop; `textHeuristicReflector` ships as a deterministic baseline.
+- **HeuristicPlanner** — splits goals on cue words and infers tool hints from natural-language verbs.
+- **EmbeddingStore** — TF-IDF based local semantic search; swap in any vectorizer (e.g. OpenAI embeddings) via `setVectorizer`.
+- **CostTracker** — per-session, per-request, per-label cost aggregation with configurable price tables.
+- **Tracer** — span model with traceId / parentSpanId / events / attributes; OTLP-compatible exporters.
+- **withRetry** — exponential backoff with optional jitter, retryable predicate, on-retry hook.
+- **Crew** — multi-agent collaboration; supervisor function decides who handles next sub-task.
+
+### Stats
+- **564 tests pass** across 47 suites in ~16 s
+- **61 source files**, **47 test files**, **16,242 lines** of TypeScript
+- Strict TypeScript, zero runtime dependencies
+
+
 ## [3.1.0] — 2026-05-18 — "Talon"
 
 Bug fixes + Slack adapter + outbound channel senders + session compaction endpoint + NO_COLOR support.

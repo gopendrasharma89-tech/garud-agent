@@ -52,7 +52,7 @@ describe('HTTP server', () => {
     const body = await res.json() as { ok: boolean; agent: string; version: string };
     expect(body.ok).toBe(true);
     expect(body.agent).toBe('Garud');
-    expect(body.version).toBe('3.1.0');
+    expect(body.version).toBe('3.2.0');
   });
 
   it('rejects unauthorized requests when token is set', async () => {
