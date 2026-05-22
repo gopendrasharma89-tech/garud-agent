@@ -19,6 +19,12 @@ export interface BuiltinToolDeps {
   heartbeat?: import('../heartbeat/heartbeat.js').Heartbeat;
   auditSink?: { list(filter?: { limit?: number; kind?: string }): Array<{ kind: string; ts: number }> };
   skillsLoader?: { list(): Array<{ name: string; description: string; tags: string[] }>; read(name: string): string | undefined };
+  embeddings?: import('../embeddings/embedding-store.js').EmbeddingStore;
+  embeddingPersistence?: import('../embeddings/embedding-persistence.js').EmbeddingPersistence;
+  costTracker?: import('../cost/cost-tracker.js').CostTracker;
+  tracer?: import('../tracing/span.js').Tracer;
+  reflector?: { revise(answer: string, goal?: string): Promise<{ output: string; iterations: number; accepted: boolean; critiques: string[] }> };
+  planner?: import('../planning/planner.js').HeuristicPlanner;
 }
 
 export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
@@ -2078,6 +2084,110 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         }
         const fullHex = '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
         return { content: JSON.stringify({ r, g, b, hex: fullHex, rgba: `rgba(${r},${g},${b},1)` }) };
+      }
+    },
+    // ===== v3.3 Cirrus: graph/crew/reflect/plan/embeddings/cost/trace =====
+    {
+      name: 'embeddings.add',
+      description: 'Add a document to the embedding store. Input: JSON {id, text, meta?}.',
+      execute: async (input) => {
+        if (!deps.embeddings) return { content: 'embeddings.add: not enabled', error: true };
+        try {
+          const payload = JSON.parse(input) as { id: string; text: string; meta?: Record<string, unknown> };
+          if (!payload.id || !payload.text) return { content: 'embeddings.add: id and text required', error: true };
+          await deps.embeddings.add({ id: payload.id, text: payload.text, meta: payload.meta });
+          if (deps.embeddingPersistence) {
+            try { await deps.embeddingPersistence.save(deps.embeddings, deps.embeddings.all()); } catch { /* best-effort */ }
+          }
+          return { content: JSON.stringify({ ok: true, size: deps.embeddings.size() }) };
+        } catch (e) { return { content: `embeddings.add: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'embeddings.search',
+      description: 'Semantic search the embedding store. Input: JSON {query, k?}.',
+      execute: async (input) => {
+        if (!deps.embeddings) return { content: 'embeddings.search: not enabled', error: true };
+        try {
+          const payload = JSON.parse(input) as { query: string; k?: number };
+          if (!payload.query) return { content: 'embeddings.search: query required', error: true };
+          const k = Math.max(1, Math.min(50, payload.k ?? 5));
+          const results = await deps.embeddings.search(payload.query, k);
+          return { content: JSON.stringify({ results, total: deps.embeddings.size() }) };
+        } catch (e) { return { content: `embeddings.search: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'embeddings.size',
+      description: 'Return number of indexed documents.',
+      execute: () => {
+        if (!deps.embeddings) return { content: 'embeddings.size: not enabled', error: true };
+        return { content: JSON.stringify({ size: deps.embeddings.size() }) };
+      }
+    },
+    {
+      name: 'cost.record',
+      description: 'Record a token/cost entry. Input: JSON {tokensIn, tokensOut, toolCalls?, sessionId?, requestId?, labels?}.',
+      execute: (input) => {
+        if (!deps.costTracker) return { content: 'cost.record: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { tokensIn?: number; tokensOut?: number; toolCalls?: number; sessionId?: string; requestId?: string; labels?: Record<string,string> };
+          const rec = deps.costTracker.record({
+            sessionId: p.sessionId ?? 'cli',
+            requestId: p.requestId ?? `req-${Date.now()}`,
+            tokensIn: p.tokensIn ?? 0,
+            tokensOut: p.tokensOut ?? 0,
+            toolCalls: p.toolCalls ?? 0,
+            labels: p.labels ?? {}
+          });
+          return { content: JSON.stringify({ ok: true, record: rec }) };
+        } catch (e) { return { content: `cost.record: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'cost.summary',
+      description: 'Return aggregated cost summary (per-label and grand totals).',
+      execute: () => {
+        if (!deps.costTracker) return { content: 'cost.summary: not enabled', error: true };
+        return { content: JSON.stringify(deps.costTracker.summary()) };
+      }
+    },
+    {
+      name: 'trace.spans',
+      description: 'List recent finished spans. Input: optional JSON {limit}.',
+      execute: (input) => {
+        if (!deps.tracer) return { content: 'trace.spans: not enabled', error: true };
+        let limit = 50;
+        if (input && input.trim()) {
+          try { limit = Math.max(1, Math.min(500, (JSON.parse(input) as { limit?: number }).limit ?? 50)); } catch { /* default */ }
+        }
+        return { content: JSON.stringify({ spans: deps.tracer.recent(limit) }) };
+      }
+    },
+    {
+      name: 'reflect.revise',
+      description: 'Self-critique and revise text. Input: JSON {answer, goal?}.',
+      execute: async (input) => {
+        if (!deps.reflector) return { content: 'reflect.revise: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { answer: string; goal?: string };
+          if (!p.answer) return { content: 'reflect.revise: answer required', error: true };
+          const result = await deps.reflector.revise(p.answer, p.goal);
+          return { content: JSON.stringify(result) };
+        } catch (e) { return { content: `reflect.revise: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'plan.create',
+      description: 'Generate a heuristic plan for a goal. Input: JSON {goal, tools?: string[]}.',
+      execute: (input) => {
+        if (!deps.planner) return { content: 'plan.create: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { goal: string; tools?: string[] };
+          if (!p.goal) return { content: 'plan.create: goal required', error: true };
+          const plan = deps.planner.plan(p.goal, { availableTools: p.tools ?? [] });
+          return { content: JSON.stringify(plan) };
+        } catch (e) { return { content: `plan.create: ${(e as Error).message}`, error: true }; }
       }
     }
   ];

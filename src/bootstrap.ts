@@ -26,6 +26,12 @@ import { HookRunner } from './hooks/hook-runner.js';
 import { ContextCompactor } from './compaction/context-compactor.js';
 import { WorkspaceFiles } from './workspace/workspace-files.js';
 import { Heartbeat } from './heartbeat/heartbeat.js';
+import { EmbeddingStore } from './embeddings/embedding-store.js';
+import { EmbeddingPersistence } from './embeddings/embedding-persistence.js';
+import { CostTracker } from './cost/cost-tracker.js';
+import { Tracer } from './tracing/span.js';
+import { reflectAndRevise, textHeuristicReflector } from './reflection/reflector.js';
+import { HeuristicPlanner } from './planning/planner.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -58,6 +64,9 @@ export interface BootstrapResult {
   compactor: ContextCompactor;
   workspace: WorkspaceFiles;
   heartbeat: Heartbeat;
+  embeddings: EmbeddingStore;
+  costTracker: CostTracker;
+  tracer: Tracer;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -80,6 +89,20 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const compactor = new ContextCompactor();
   const workspace = new WorkspaceFiles(config.storage.workspaceDir);
 
+  // ===== v3.2/v3.3 Cirrus subsystems =====
+  const embeddings = new EmbeddingStore();
+  const embeddingPersistence = new EmbeddingPersistence(path.join(config.storage.workspaceDir, 'embeddings.jsonl'));
+  try { await embeddingPersistence.restoreInto(embeddings); } catch { /* first-run */ }
+  const costTracker = new CostTracker();
+  const tracer = new Tracer();
+  const reflector = {
+    /** Revise text by running one reflection pass over the built-in heuristic reflector. */
+    async revise(answer: string, _goal?: string) {
+      return reflectAndRevise(answer, textHeuristicReflector, { maxIterations: 2 });
+    }
+  };
+  const planner = new HeuristicPlanner();
+
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
   // builtin tools see them via the deps closure (mutable refs).
@@ -95,7 +118,13 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     workspace,
     get heartbeat() { return lazyDeps.heartbeat; },
     get auditSink() { return lazyDeps.auditSink; },
-    get skillsLoader() { return lazyDeps.skillsRef; }
+    get skillsLoader() { return lazyDeps.skillsRef; },
+    embeddings,
+    embeddingPersistence,
+    costTracker,
+    tracer,
+    reflector,
+    planner
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
   if (config.plugins?.length) {
@@ -290,7 +319,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   return {
     gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
     inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
-    longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat
+    longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat,
+    embeddings, costTracker, tracer
   };
 }
 

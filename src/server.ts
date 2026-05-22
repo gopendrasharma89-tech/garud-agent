@@ -27,6 +27,9 @@ export interface ServerDeps {
   hooks?: import('./hooks/hook-runner.js').HookRunner;
   workspace?: import('./workspace/workspace-files.js').WorkspaceFiles;
   heartbeat?: import('./heartbeat/heartbeat.js').Heartbeat;
+  embeddings?: import('./embeddings/embedding-store.js').EmbeddingStore;
+  costTracker?: import('./cost/cost-tracker.js').CostTracker;
+  tracer?: import('./tracing/span.js').Tracer;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -485,6 +488,44 @@ export function createServer(deps: ServerDeps): http.Server {
         const counts: Record<string, number> = {};
         for (const entry of sink.list({ limit: 10_000 })) counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
         return send(res, 200, { ok: true, counts });
+      }
+
+      // ===== v3.3 Cirrus: embeddings / cost / tracing endpoints =====
+      if (req.method === 'GET' && url.pathname === '/embeddings') {
+        if (!deps.embeddings) return send(res, 503, { ok: false, error: 'embeddings not configured' });
+        return send(res, 200, { ok: true, size: deps.embeddings.size() });
+      }
+      if (req.method === 'POST' && url.pathname === '/embeddings/add') {
+        if (!deps.embeddings) return send(res, 503, { ok: false, error: 'embeddings not configured' });
+        try {
+          const { payload } = await readJson<{ id?: string; text?: string; meta?: Record<string, unknown> }>(req, 256 * 1024);
+          if (!payload.id || !payload.text) return send(res, 400, { ok: false, error: 'id and text required' });
+          const doc: { id: string; text: string; meta?: Record<string, unknown> } = { id: payload.id, text: payload.text };
+          if (payload.meta !== undefined) doc.meta = payload.meta;
+          await deps.embeddings.add(doc);
+          return send(res, 200, { ok: true, size: deps.embeddings.size() });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+      if (req.method === 'POST' && url.pathname === '/embeddings/search') {
+        if (!deps.embeddings) return send(res, 503, { ok: false, error: 'embeddings not configured' });
+        try {
+          const { payload } = await readJson<{ query?: string; k?: number }>(req);
+          if (!payload.query) return send(res, 400, { ok: false, error: 'query required' });
+          const k = Math.max(1, Math.min(50, payload.k ?? 5));
+          const results = await deps.embeddings.search(payload.query, k);
+          return send(res, 200, { ok: true, results });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+      if (req.method === 'GET' && url.pathname === '/cost/summary') {
+        if (!deps.costTracker) return send(res, 503, { ok: false, error: 'cost tracker not configured' });
+        const sessionId = url.searchParams.get('sessionId');
+        const filter: { sessionId?: string } = sessionId ? { sessionId } : {};
+        return send(res, 200, { ok: true, summary: deps.costTracker.summary(filter) });
+      }
+      if (req.method === 'GET' && url.pathname === '/trace/spans') {
+        if (!deps.tracer) return send(res, 503, { ok: false, error: 'tracer not configured' });
+        const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') ?? 50)));
+        return send(res, 200, { ok: true, spans: deps.tracer.recent(limit) });
       }
 
       // ===== v3.0: heartbeat + workspace endpoints =====

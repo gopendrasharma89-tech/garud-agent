@@ -64,8 +64,21 @@ export class AgentGraph<TState> {
     const maxSteps = opts.maxSteps ?? 32;
     if (!this.entry) return { state: initialState, history: [], steps: 0, status: 'error', error: 'no entry node' };
 
+    // Use structuredClone when possible; fall back to JSON clone for state
+    // containing functions or other non-cloneable values; if even that fails,
+    // use the original reference (caller-beware).
+    let clonedState: TState;
+    try {
+      clonedState = structuredClone(initialState);
+    } catch {
+      try {
+        clonedState = JSON.parse(JSON.stringify(initialState)) as TState;
+      } catch {
+        clonedState = initialState;
+      }
+    }
     const ctx: GraphContext<TState> = {
-      state: structuredClone(initialState),
+      state: clonedState,
       step: 0,
       history: [],
       meta: {}

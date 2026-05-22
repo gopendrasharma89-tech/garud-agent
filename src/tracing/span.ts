@@ -103,9 +103,25 @@ export class Tracer {
       .sort((a, b) => a.startTime - b.startTime);
   }
 
-  /** Recent spans (newest first). */
+  /** Recent spans (newest first). Includes both finished and in-flight spans. */
   recent(limit = 100): Span[] {
-    return [...this.finished].slice(-limit).reverse();
+    const all = [...this.finished, ...this.active.values()].sort((a, b) => b.startTime - a.startTime);
+    return all.slice(0, Math.max(1, limit));
+  }
+
+  /** Wrap an async function in a span. Resolves to the function's return value. */
+  async wrap<T>(name: string, fn: (span: Span) => Promise<T> | T, attributes?: Record<string, unknown>): Promise<T> {
+    const span = this.start(name, attributes ? { attributes } : {});
+    try {
+      const value = await fn(span);
+      this.setStatus(span.spanId, 'ok');
+      return value;
+    } catch (error) {
+      this.setStatus(span.spanId, 'error', error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      this.end(span.spanId);
+    }
   }
 
   /** Create a new trace id (16 random bytes hex, OTLP-compatible). */

@@ -1,7 +1,7 @@
 // Centralized version constant. Update on each release alongside package.json.
-export const GARUD_VERSION = '3.2.0';
+export const GARUD_VERSION = '3.3.0';
 export const GARUD_BUILD = {
   version: GARUD_VERSION,
-  releasedAt: '2026-05-19',
-  codename: 'Stormwing'
+  releasedAt: '2026-05-20',
+  codename: 'Cirrus'
 };

@@ -1,5 +1,41 @@
 # Changelog
 
+## [3.3.0] — 2026-05-20 — "Cirrus"
+
+Polish release that **wires the eight v3.2 subsystems into the rest of the system**: built-in tools, HTTP endpoints, and on-disk persistence. Garud is now the only zero-dependency agent gateway that ships LangGraph-style graphs, CrewAI multi-agent, TF-IDF embeddings, cost tracking, OTLP tracing, reflection, planning *and* exposes them all over HTTP.
+
+### 🐛 Bug fixes
+- `EmbeddingStore` had no way to snapshot its docs — added `all()` so persistence layers can save it.
+- `BuiltinToolDeps` was missing slots for the v3.2 subsystems, so they were unreachable from CLI tools. They are now first-class deps.
+- `bootstrap()` did not wire `embeddings`, `costTracker`, `tracer`, `reflector`, or `planner` into the tool registry; v3.2 subsystems were effectively dark. Now wired with auto-restore for embeddings from `workspace/embeddings.jsonl`.
+- `index.ts` did not forward the new subsystems to `createServer`, so the HTTP layer could not serve them. Forwarded now.
+- Server version-aware tests were pinned to "Stormwing/3.2.0"; bumped to "Cirrus/3.3.0".
+
+### ✨ New built-in tools (+8 → 148 total)
+- `embeddings.add` — add a doc; auto-persists to `workspace/embeddings.jsonl`
+- `embeddings.search` — top-K TF-IDF semantic search
+- `embeddings.size` — count indexed docs
+- `cost.record` — record token/tool-call usage with labels
+- `cost.summary` — aggregate cost summary with optional filter
+- `trace.spans` — list recent finished spans (OTLP-compatible)
+- `reflect.revise` — run a heuristic self-critique pass
+- `plan.create` — heuristic plan decomposition with tool hints
+
+### 🌐 New HTTP endpoints (+5)
+- `GET  /embeddings` → `{ size }`
+- `POST /embeddings/add` → adds `{id,text,meta?}`, returns new size (256 KiB cap)
+- `POST /embeddings/search` → top-K results for `{query,k?}`
+- `GET  /cost/summary?sessionId=<id>` → aggregated cost
+- `GET  /trace/spans?limit=N` → recent spans (limit clamped to [1,500])
+
+### 💾 Persistence
+- Embeddings now survive process restarts via JSONL on disk at `workspace/embeddings.jsonl` (atomic temp+rename).
+
+### 📊 Stats
+- **576 tests pass** across 49 suites in ~17s
+- **63 source files**, **49 test files**, **16,816 lines of TypeScript**
+- 148 built-in tools, ~55 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.2.0] — 2026-05-19 — "Stormwing"
 
 Major release: **8 new subsystems** that put Garud on par with LangGraph, CrewAI, AutoGen, and LangChain — while keeping zero runtime dependencies.

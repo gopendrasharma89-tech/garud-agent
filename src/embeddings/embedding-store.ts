@@ -30,6 +30,9 @@ export class EmbeddingStore<TMeta = Record<string, unknown>> {
 
   size(): number { return this.docs.size; }
 
+  /** Return all stored documents (snapshot). */
+  all(): Array<EmbeddingDoc<TMeta>> { return Array.from(this.docs.values()); }
+
   async add(doc: { id: string; text: string; meta?: TMeta }): Promise<EmbeddingDoc<TMeta>> {
     const vector = this.vectorizer
       ? await this.vectorizer(doc.text)

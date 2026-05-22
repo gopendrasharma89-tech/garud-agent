@@ -40,7 +40,16 @@ export class CostTracker {
   setPriceTable(table: PriceTable): void { this.priceTable = { ...table }; }
 
   record(rec: Omit<CostRecord, 'ts'>): CostRecord {
-    const full: CostRecord = { ts: Date.now(), ...rec };
+    // Clone labels so the caller can't mutate stored records by reusing the object.
+    const full: CostRecord = {
+      ts: Date.now(),
+      sessionId: rec.sessionId,
+      requestId: rec.requestId,
+      tokensIn: rec.tokensIn,
+      tokensOut: rec.tokensOut,
+      toolCalls: rec.toolCalls,
+      labels: { ...(rec.labels ?? {}) }
+    };
     this.records.push(full);
     // Bound memory at 10k records.
     if (this.records.length > 10_000) this.records.splice(0, this.records.length - 10_000);

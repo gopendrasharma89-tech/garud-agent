@@ -18,6 +18,8 @@ export interface RetryOptions {
   retryable?: (error: unknown, attempt: number) => boolean;
   /** Called before each retry; useful for tracing/logging. */
   onRetry?: (error: unknown, attempt: number, delay: number) => void;
+  /** Optional abort signal to cancel between retries. */
+  signal?: AbortSignal;
 }
 
 export interface RetryResult<T> {
@@ -39,6 +41,9 @@ export async function withRetry<T>(fn: () => Promise<T> | T, opts: RetryOptions 
   let lastError: unknown;
   let totalDelayMs = 0;
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (opts.signal?.aborted) {
+      return { ok: false, error: new Error('aborted'), attempts: attempt - 1, totalDelayMs };
+    }
     try {
       const value = await fn();
       return { ok: true, value, attempts: attempt, totalDelayMs };
