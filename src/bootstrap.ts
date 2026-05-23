@@ -1,5 +1,6 @@
 import { AgentRuntime } from './agent/agent-runtime.js';
 import { BrainProvider } from './brain/brain.js';
+import { AutoCostBrain } from './brain/auto-cost-brain.js';
 import { DeterministicBrain } from './brain/deterministic-brain.js';
 import { OpenAiBrain } from './brain/openai-brain.js';
 import { ToolCache } from './cache/tool-cache.js';
@@ -173,7 +174,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     ? new ToolQuotaManager({ defaultLimit: config.quotas.defaultDailyLimit })
     : new ToolQuotaManager();
 
-  const brain = buildBrain(config);
+  // Wrap the brain so every plan()/compose() automatically records into
+  // the CostTracker. Transparent to AgentRuntime.
+  const brain: BrainProvider = new AutoCostBrain(buildBrain(config), costTracker);
 
   const audit = new AuditLogger();
   const inMemoryAudit = new InMemoryAuditLog();

@@ -2189,6 +2189,104 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           return { content: JSON.stringify(plan) };
         } catch (e) { return { content: `plan.create: ${(e as Error).message}`, error: true }; }
       }
+    },
+    // ===== v3.4 Stratus: graph/crew/hmac/trace.size/cost.recent =====
+    {
+      name: 'graph.run',
+      description: 'Run a declarative AgentGraph spec. Input: JSON {entry, nodes:[{id,patch?,setDone?}], edges:[{from,to,whenStateKey?,whenStateEquals?}], initialState?, maxSteps?}.',
+      execute: async (input) => {
+        try {
+          const p = JSON.parse(input) as { entry: string; nodes: Array<{ id: string; patch?: Record<string, unknown>; setDone?: boolean }>; edges: Array<{ from: string; to: string; whenStateKey?: string; whenStateEquals?: unknown }>; initialState?: Record<string, unknown>; maxSteps?: number };
+          if (!p.entry || !Array.isArray(p.nodes) || !Array.isArray(p.edges)) return { content: 'graph.run: entry/nodes/edges required', error: true };
+          const { AgentGraph, END } = await import('../graph/agent-graph.js');
+          const g = new AgentGraph<Record<string, unknown>>();
+          for (const n of p.nodes) {
+            const patch = n.patch ?? {};
+            const setDone = n.setDone === true;
+            g.addNode(n.id, () => ({ ...patch, ...(setDone ? { __done: true } : {}) }));
+          }
+          for (const e of p.edges) {
+            const to = e.to === 'END' ? END : e.to;
+            if (e.whenStateKey !== undefined) {
+              const key = e.whenStateKey;
+              const want = e.whenStateEquals;
+              g.addEdge(e.from, to, (ctx) => (ctx.state as Record<string, unknown>)[key] === want);
+            } else { g.addEdge(e.from, to); }
+          }
+          g.setEntry(p.entry);
+          const result = await g.run(p.initialState ?? {}, { maxSteps: Math.min(64, p.maxSteps ?? 16) });
+          return { content: JSON.stringify(result) };
+        } catch (e) { return { content: `graph.run: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'crew.run',
+      description: 'Run a static-reply Crew. Input: JSON {goal, members:[{name,role,reply,tools?}], maxRounds?}.',
+      execute: async (input) => {
+        try {
+          const p = JSON.parse(input) as { goal: string; members: Array<{ name: string; role: string; reply: string; tools?: string[] }>; maxRounds?: number };
+          if (!p.goal || !Array.isArray(p.members) || p.members.length === 0) return { content: 'crew.run: goal and members[] required', error: true };
+          const { Crew } = await import('../crew/crew.js');
+          const crew = new Crew();
+          crew.setMaxTurns(Math.min(8, p.maxRounds ?? 3));
+          for (const m of p.members) {
+            crew.add({ name: m.name, role: m.role, ...(m.tools ? { tools: m.tools } : {}), handler: () => m.reply });
+          }
+          const result = await crew.run(p.goal);
+          return { content: JSON.stringify(result) };
+        } catch (e) { return { content: `crew.run: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'cost.recent',
+      description: 'List recent cost records (most recent first). Input: optional JSON {limit, sessionId?}.',
+      execute: (input) => {
+        if (!deps.costTracker) return { content: 'cost.recent: not enabled', error: true };
+        let limit = 20; let sessionId: string | undefined;
+        if (input && input.trim()) {
+          try {
+            const p = JSON.parse(input) as { limit?: number; sessionId?: string };
+            if (typeof p.limit === 'number') limit = Math.max(1, Math.min(200, p.limit));
+            sessionId = p.sessionId;
+          } catch { /* default */ }
+        }
+        const filter: { limit: number; sessionId?: string } = { limit };
+        if (sessionId) filter.sessionId = sessionId;
+        return { content: JSON.stringify({ records: deps.costTracker.list(filter) }) };
+      }
+    },
+    {
+      name: 'trace.size',
+      description: 'Return Tracer counts (active in-flight + recent finished).',
+      execute: () => {
+        if (!deps.tracer) return { content: 'trace.size: not enabled', error: true };
+        return { content: JSON.stringify({ active: deps.tracer.size(), recent: deps.tracer.recent(1000).length }) };
+      }
+    },
+    {
+      name: 'hmac.sign',
+      description: 'Compute HMAC-SHA256 over a body. Input: JSON {secret, body, algorithm?}. Returns sha256=<hex>.',
+      execute: async (input) => {
+        try {
+          const p = JSON.parse(input) as { secret: string; body: string; algorithm?: 'sha256' | 'sha1' | 'sha512' };
+          if (!p.secret || typeof p.body !== 'string') return { content: 'hmac.sign: secret and body required', error: true };
+          const { signHmac } = await import('../channels/hmac-verify.js');
+          return { content: signHmac(p.secret, p.body, p.algorithm ?? 'sha256') };
+        } catch (e) { return { content: `hmac.sign: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'hmac.verify',
+      description: 'Verify HMAC signature. Input: JSON {secret, body, signature, algorithm?}. Returns {ok, reason?}.',
+      execute: async (input) => {
+        try {
+          const p = JSON.parse(input) as { secret: string; body: string; signature: string; algorithm?: 'sha256' | 'sha1' | 'sha512' };
+          if (!p.secret || typeof p.body !== 'string' || !p.signature) return { content: 'hmac.verify: secret/body/signature required', error: true };
+          const { verifyHmac } = await import('../channels/hmac-verify.js');
+          const result = verifyHmac(p.secret, p.body, p.signature, p.algorithm ? { algorithm: p.algorithm } : {});
+          return { content: JSON.stringify(result) };
+        } catch (e) { return { content: `hmac.verify: ${(e as Error).message}`, error: true }; }
+      }
     }
   ];
 }

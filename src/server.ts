@@ -30,6 +30,17 @@ export interface ServerDeps {
   embeddings?: import('./embeddings/embedding-store.js').EmbeddingStore;
   costTracker?: import('./cost/cost-tracker.js').CostTracker;
   tracer?: import('./tracing/span.js').Tracer;
+  /**
+   * Per-channel HMAC secrets. When set, the matching `/channel/*` endpoint
+   * requires a matching `x-hub-signature-256` (or `x-garud-signature`) header.
+   * When unset, the endpoint accepts unsigned payloads (backwards-compatible).
+   */
+  channelSecrets?: {
+    whatsapp?: string;
+    telegram?: string;
+    discord?: string;
+    slack?: string;
+  };
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -527,6 +538,78 @@ export function createServer(deps: ServerDeps): http.Server {
         const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') ?? 50)));
         return send(res, 200, { ok: true, spans: deps.tracer.recent(limit) });
       }
+      if (req.method === 'GET' && url.pathname === '/trace/size') {
+        if (!deps.tracer) return send(res, 503, { ok: false, error: 'tracer not configured' });
+        return send(res, 200, { ok: true, active: deps.tracer.size(), recent: deps.tracer.recent(1000).length });
+      }
+
+      // ===== v3.4 Stratus: graph & crew run endpoints =====
+      // POST /graph/run executes a small, declarative graph spec without
+      // requiring code. Nodes can return a `nextState` patch + an optional
+      // `done` flag to terminate. Useful for HTTP-only orchestration.
+      if (req.method === 'POST' && url.pathname === '/graph/run') {
+        try {
+          const { payload } = await readJson<{
+            initialState?: Record<string, unknown>;
+            entry: string;
+            maxSteps?: number;
+            nodes: Array<{ id: string; patch?: Record<string, unknown>; setDone?: boolean }>;
+            edges: Array<{ from: string; to: string; whenStateKey?: string; whenStateEquals?: unknown }>;
+          }>(req, 64 * 1024);
+          if (!payload.entry || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+            return send(res, 400, { ok: false, error: 'entry, nodes[], edges[] required' });
+          }
+          const { AgentGraph, END } = await import('./graph/agent-graph.js');
+          const g = new AgentGraph<Record<string, unknown>>();
+          for (const n of payload.nodes) {
+            const patch = n.patch ?? {};
+            const setDone = n.setDone === true;
+            g.addNode(n.id, () => ({ ...patch, ...(setDone ? { __done: true } : {}) }));
+          }
+          for (const e of payload.edges) {
+            const to = e.to === 'END' ? END : e.to;
+            if (e.whenStateKey !== undefined) {
+              const key = e.whenStateKey;
+              const want = e.whenStateEquals;
+              g.addEdge(e.from, to, (ctx) => (ctx.state as Record<string, unknown>)[key] === want);
+            } else {
+              g.addEdge(e.from, to);
+            }
+          }
+          g.setEntry(payload.entry);
+          const result = await g.run(payload.initialState ?? {}, { maxSteps: Math.min(64, payload.maxSteps ?? 16) });
+          return send(res, 200, { ok: true, result });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+
+      // POST /crew/run runs a roster of static-reply agents (no LLM required).
+      // Each member contributes a fixed string; useful for templated workflows
+      // and as a baseline for hooking in your own brain-backed handlers.
+      if (req.method === 'POST' && url.pathname === '/crew/run') {
+        try {
+          const { payload } = await readJson<{
+            goal: string;
+            members: Array<{ name: string; role: string; reply: string; tools?: string[] }>;
+            maxRounds?: number;
+          }>(req, 64 * 1024);
+          if (!payload.goal || !Array.isArray(payload.members) || payload.members.length === 0) {
+            return send(res, 400, { ok: false, error: 'goal and members[] required' });
+          }
+          const { Crew } = await import('./crew/crew.js');
+          const crew = new Crew();
+          crew.setMaxTurns(Math.min(8, payload.maxRounds ?? 3));
+          for (const m of payload.members) {
+            crew.add({
+              name: m.name,
+              role: m.role,
+              ...(m.tools ? { tools: m.tools } : {}),
+              handler: () => m.reply
+            });
+          }
+          const result = await crew.run(payload.goal);
+          return send(res, 200, { ok: true, result });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
 
       // ===== v3.0: heartbeat + workspace endpoints =====
       if (req.method === 'GET' && url.pathname === '/heartbeat') {
@@ -595,75 +678,56 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, users: await deps.workspace.listUsers() });
       }
 
-      // ===== v3.0: channel adapters =====
-      if (req.method === 'POST' && url.pathname === '/channel/whatsapp') {
-        const { parseWhatsApp } = await import('./channels/adapters/whatsapp-adapter.js');
-        let payload: unknown;
-        try { payload = (await readJson<unknown>(req)).payload; }
-        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
-        const msgs = parseWhatsApp(payload);
-        const accepted: string[] = [];
-        for (const m of msgs) {
-          try {
-            const detail = await gateway.handleDetailed({ ...m, requestId });
-            accepted.push(detail.requestId);
-          } catch { /* skip per-message failures */ }
-        }
-        return send(res, 200, { ok: true, accepted });
-      }
+      // ===== v3.0/v3.4: channel adapters (with optional HMAC) =====
+      const channelMatch = req.method === 'POST' && /^\/channel\/(whatsapp|telegram|discord|slack)$/.exec(url.pathname);
+      if (channelMatch) {
+        const channel = channelMatch[1] as 'whatsapp' | 'telegram' | 'discord' | 'slack';
+        const { verifyHmac } = await import('./channels/hmac-verify.js');
+        // Read raw body once so HMAC sees exactly the bytes the client sent.
+        let raw: Buffer;
+        try { raw = await readBody(req, 512 * 1024); }
+        catch { return send(res, 413, { ok: false, error: 'payload too large' }); }
 
-      if (req.method === 'POST' && url.pathname === '/channel/telegram') {
-        const { parseTelegram } = await import('./channels/adapters/telegram-adapter.js');
-        let payload: unknown;
-        try { payload = (await readJson<unknown>(req)).payload; }
-        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
-        const msgs = parseTelegram(payload);
-        const accepted: string[] = [];
-        for (const m of msgs) {
-          try {
-            const detail = await gateway.handleDetailed({ ...m, requestId });
-            accepted.push(detail.requestId);
-          } catch { /* skip */ }
+        // HMAC verification when a secret is configured for this channel.
+        const secret = deps.channelSecrets?.[channel];
+        if (secret) {
+          const sig = (req.headers['x-hub-signature-256'] ?? req.headers['x-garud-signature']) as string | string[] | undefined;
+          const v = verifyHmac(secret, raw, sig);
+          if (!v.ok) return send(res, 401, { ok: false, error: `hmac: ${v.reason}` });
         }
-        return send(res, 200, { ok: true, accepted });
-      }
 
-      if (req.method === 'POST' && url.pathname === '/channel/discord') {
-        const { parseDiscord } = await import('./channels/adapters/discord-adapter.js');
-        let payload: unknown;
-        try { payload = (await readJson<unknown>(req)).payload; }
-        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
-        // Discord pings interactions endpoint with type=1 PING; respond with type=1 pong.
-        if ((payload as { type?: number })?.type === 1) {
-          return send(res, 200, { type: 1 });
+        let payload: unknown = {};
+        if (raw.length > 0) {
+          try { payload = JSON.parse(raw.toString('utf8')); }
+          catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
         }
-        const msgs = parseDiscord(payload);
-        const accepted: string[] = [];
-        for (const m of msgs) {
-          try {
-            const detail = await gateway.handleDetailed({ ...m, requestId });
-            accepted.push(detail.requestId);
-          } catch { /* skip */ }
-        }
-        return send(res, 200, { ok: true, accepted });
-      }
 
-      if (req.method === 'POST' && url.pathname === '/channel/slack') {
-        const { parseSlack } = await import('./channels/adapters/slack-adapter.js');
-        let payload: unknown;
-        try { payload = (await readJson<unknown>(req)).payload; }
-        catch { return send(res, 400, { ok: false, error: 'invalid JSON' }); }
-        const result = parseSlack(payload);
-        // Slack expects a plain-text challenge response during URL verification.
-        if (result.challenge !== undefined) {
-          return sendText(res, 200, 'text/plain; charset=utf-8', result.challenge);
-        }
         const accepted: string[] = [];
-        for (const m of result.messages) {
-          try {
-            const detail = await gateway.handleDetailed({ ...m, requestId });
-            accepted.push(detail.requestId);
-          } catch { /* skip */ }
+        if (channel === 'whatsapp') {
+          const { parseWhatsApp } = await import('./channels/adapters/whatsapp-adapter.js');
+          for (const m of parseWhatsApp(payload)) {
+            try { accepted.push((await gateway.handleDetailed({ ...m, requestId })).requestId); } catch { /* skip */ }
+          }
+        } else if (channel === 'telegram') {
+          const { parseTelegram } = await import('./channels/adapters/telegram-adapter.js');
+          for (const m of parseTelegram(payload)) {
+            try { accepted.push((await gateway.handleDetailed({ ...m, requestId })).requestId); } catch { /* skip */ }
+          }
+        } else if (channel === 'discord') {
+          if ((payload as { type?: number })?.type === 1) return send(res, 200, { type: 1 });
+          const { parseDiscord } = await import('./channels/adapters/discord-adapter.js');
+          for (const m of parseDiscord(payload)) {
+            try { accepted.push((await gateway.handleDetailed({ ...m, requestId })).requestId); } catch { /* skip */ }
+          }
+        } else {
+          const { parseSlack } = await import('./channels/adapters/slack-adapter.js');
+          const result = parseSlack(payload);
+          if (result.challenge !== undefined) {
+            return sendText(res, 200, 'text/plain; charset=utf-8', result.challenge);
+          }
+          for (const m of result.messages) {
+            try { accepted.push((await gateway.handleDetailed({ ...m, requestId })).requestId); } catch { /* skip */ }
+          }
         }
         return send(res, 200, { ok: true, accepted });
       }

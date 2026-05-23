@@ -1,5 +1,42 @@
 # Changelog
 
+## [3.4.0] — 2026-05-21 — "Stratus"
+
+Hardening release: **HMAC for channels**, **HTTP for graph/crew**, **auto cost tracking on the brain**, plus 6 new tools.
+
+### 🐛 Bug fixes
+- `AgentGraph` had no clean way to short-circuit from inside a node. Nodes can now write `__done: true` into the state to terminate the run cleanly (status remains `completed`).
+- Channel endpoints (`/channel/whatsapp|telegram|discord|slack`) accepted any payload without authentication, even when the user had a shared secret with the upstream platform. They now read the raw body once, verify HMAC if a secret is configured, then parse — closing a real security hole.
+- `OpenAiBrain` never recorded into `CostTracker`, so the cost dashboard stayed at zero in real deployments. Added `AutoCostBrain` decorator that wraps any `BrainProvider` and records `plan` + `compose` token estimates automatically; `bootstrap()` now wires it transparently.
+
+### 🔐 New: HMAC channel security
+- `src/channels/hmac-verify.ts` — constant-time `verifyHmac` and `signHmac` with sha1/sha256/sha512 support, length-mismatch rejection, optional body-size cap.
+- `ServerDeps.channelSecrets` lets you configure per-channel secrets; `index.ts` reads `GARUD_WHATSAPP_SECRET`, `GARUD_TELEGRAM_SECRET`, `GARUD_DISCORD_SECRET`, `GARUD_SLACK_SECRET` from the environment.
+- Accepts both `x-hub-signature-256: sha256=<hex>` (GitHub/Slack-style) and `x-garud-signature: <hex>` (raw) headers.
+- When no secret is configured the endpoint remains open (backwards-compatible).
+
+### 💸 New: AutoCostBrain
+- `src/brain/auto-cost-brain.ts` — transparent decorator. Records `tokensIn`/`tokensOut`/`toolCalls` and labels `{ brain, op }` on every `plan`/`compose`.
+- Token estimator: deterministic 1-token-per-4-chars when the underlying provider doesn't surface real usage.
+
+### ✨ New built-in tools (+6 → 154 total)
+- `graph.run` — execute a declarative AgentGraph spec via JSON
+- `crew.run` — run a static-reply Crew via JSON
+- `cost.recent` — list recent cost records with optional `sessionId` filter
+- `trace.size` — Tracer counts (active in-flight + finished)
+- `hmac.sign` — compute HMAC for outbound verification / tests
+- `hmac.verify` — verify HMAC, returns `{ ok, reason? }`
+
+### 🌐 New HTTP endpoints (+3)
+- `POST /graph/run` — execute a JSON graph spec (max 64 KiB, capped at 64 steps)
+- `POST /crew/run` — execute a static-reply crew spec (max 8 rounds)
+- `GET /trace/size` — active + recent span counts
+
+### 📊 Stats
+- **596 tests pass** across 51 suites in ~17s
+- **65 source files**, **51 test files**, **17,379 lines of TypeScript**
+- 154 built-in tools, ~60 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.3.0] — 2026-05-20 — "Cirrus"
 
 Polish release that **wires the eight v3.2 subsystems into the rest of the system**: built-in tools, HTTP endpoints, and on-disk persistence. Garud is now the only zero-dependency agent gateway that ships LangGraph-style graphs, CrewAI multi-agent, TF-IDF embeddings, cost tracking, OTLP tracing, reflection, planning *and* exposes them all over HTTP.

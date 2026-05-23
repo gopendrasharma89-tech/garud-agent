@@ -48,7 +48,13 @@ async function main(): Promise<void> {
     logger: logger.child('http'),
     wsClientCount: () => wsServer?.size() ?? 0,
     longterm, dailyLog, subagent, nodes, hooks, workspace, heartbeat,
-    embeddings, costTracker, tracer
+    embeddings, costTracker, tracer,
+    channelSecrets: {
+      ...(process.env.GARUD_WHATSAPP_SECRET ? { whatsapp: process.env.GARUD_WHATSAPP_SECRET } : {}),
+      ...(process.env.GARUD_TELEGRAM_SECRET ? { telegram: process.env.GARUD_TELEGRAM_SECRET } : {}),
+      ...(process.env.GARUD_DISCORD_SECRET ? { discord: process.env.GARUD_DISCORD_SECRET } : {}),
+      ...(process.env.GARUD_SLACK_SECRET ? { slack: process.env.GARUD_SLACK_SECRET } : {})
+    }
   });
   if (wsServer) wsServer.attach(server);
 

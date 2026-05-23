@@ -98,6 +98,10 @@ export class AgentGraph<TState> {
         const patch = await fn(ctx);
         if (patch && typeof patch === 'object') Object.assign(ctx.state as object, patch);
         ctx.step += 1;
+        // Sentinel: a node can short-circuit the loop by writing __done=true.
+        if ((ctx.state as Record<string, unknown>).__done === true) {
+          return { state: ctx.state, history: ctx.history, steps: ctx.step, status: 'completed' };
+        }
         current = await this.nextNode(current, ctx);
       }
       return { state: ctx.state, history: ctx.history, steps: ctx.step, status: 'completed' };
