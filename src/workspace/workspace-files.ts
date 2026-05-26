@@ -65,14 +65,67 @@ export class WorkspaceFiles {
     await this.write('AGENTS.md', body);
   }
 
+  // ─────────────────────────── IDENTITY.md (v3.5) ───────────────────────────
+  async readIdentity(): Promise<string> { return this.readOr('IDENTITY.md', DEFAULT_IDENTITY); }
+  async writeIdentity(body: string): Promise<void> {
+    if (Buffer.byteLength(body, 'utf8') > 32 * 1024) throw new Error('IDENTITY.md too large (max 32 KiB)');
+    await this.write('IDENTITY.md', body);
+  }
+
+  // ─────────────────────────── TOOLS.md (v3.5) ───────────────────────────
+  /** Read TOOLS.md (the human-curated tools manual). */
+  async readTools(): Promise<string> { return this.readOr('TOOLS.md', DEFAULT_TOOLS); }
+  async writeTools(body: string): Promise<void> {
+    if (Buffer.byteLength(body, 'utf8') > 256 * 1024) throw new Error('TOOLS.md too large (max 256 KiB)');
+    await this.write('TOOLS.md', body);
+  }
+  /** Regenerate TOOLS.md from a tool registry snapshot (auto-generated catalog). */
+  async regenerateTools(tools: Array<{ name: string; description?: string }>): Promise<string> {
+    const lines = ['# Tools Catalog', '', '_Auto-generated. Hand-edits to this file are overwritten on regenerate._', '', `## ${tools.length} built-in tools`, ''];
+    const sorted = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+    for (const t of sorted) {
+      lines.push(`- **${t.name}** — ${(t.description ?? '').replace(/\n/g, ' ').slice(0, 240) || '_no description_'}`);
+    }
+    const body = lines.join('\n') + '\n';
+    await this.write('TOOLS.md', body);
+    return body;
+  }
+
+  // ─────────────────────────── HEARTBEAT.md (v3.5) ───────────────────────────
+  async readHeartbeat(): Promise<string> { return this.readOr('HEARTBEAT.md', DEFAULT_HEARTBEAT); }
+  async writeHeartbeat(body: string): Promise<void> {
+    if (Buffer.byteLength(body, 'utf8') > 64 * 1024) throw new Error('HEARTBEAT.md too large (max 64 KiB)');
+    await this.write('HEARTBEAT.md', body);
+  }
+  /**
+   * Parse HEARTBEAT.md into a list of rules. Each rule is a non-empty line
+   * after a `## ` heading; lines starting with `-` or `*` are extracted as
+   * rules. This is intentionally simple — the LLM brain interprets the prose
+   * at runtime.
+   */
+  async parseHeartbeatRules(): Promise<Array<{ section: string; rule: string }>> {
+    const body = await this.readHeartbeat();
+    const rules: Array<{ section: string; rule: string }> = [];
+    let section = 'general';
+    for (const raw of body.split('\n')) {
+      const line = raw.trim();
+      if (line.startsWith('## ')) { section = line.slice(3).trim() || 'general'; continue; }
+      const m = /^[-*]\s+(.+)$/.exec(line);
+      if (m && m[1]) rules.push({ section, rule: m[1].trim() });
+    }
+    return rules;
+  }
+
   /** Combined snapshot for diagnostics / dashboard. */
-  async snapshot(): Promise<{ soul: string; agents: string; userCount: number }> {
-    const [soul, agents, users] = await Promise.all([
+  async snapshot(): Promise<{ soul: string; agents: string; identity: string; userCount: number; heartbeatRuleCount: number }> {
+    const [soul, agents, identity, users, hbRules] = await Promise.all([
       this.readSoul(),
       this.readAgents(),
-      this.listUsers()
+      this.readIdentity(),
+      this.listUsers(),
+      this.parseHeartbeatRules()
     ]);
-    return { soul, agents, userCount: users.length };
+    return { soul, agents, identity, userCount: users.length, heartbeatRuleCount: hbRules.length };
   }
 }
 
@@ -96,6 +149,40 @@ You speak in the language the user used. You never make up facts.
 - Memory: short-term in session, long-term in MEMORY.md
 - Tools: list available via \`garud tools\`; prefer specific tools over general
 - Sub-agents: spawn for parallel work; never nest them
+`;
+
+const DEFAULT_IDENTITY = `# Identity
+
+- **name**: Garud
+- **id**: garud-agent
+- **role**: local-first agent gateway
+- **version**: 3.5.0
+- **codename**: Cumulus
+- **homepage**: https://github.com/gopendrasharma89-tech/garud-agent
+- **license**: MIT
+`;
+
+const DEFAULT_TOOLS = `# Tools Catalog
+
+_Run \`garud tools.regenerate\` (or POST /workspace/tools/regenerate) to regenerate this file from the live tool registry._
+
+The agent prefers specific tools over general ones. Tools follow \`namespace.action\`
+naming. See \`/tools\` HTTP endpoint for the live list.
+`;
+
+const DEFAULT_HEARTBEAT = `# Heartbeat
+
+Declarative recurring tasks the agent should consider during each tick.
+Lines starting with \`-\` or \`*\` under a \`## section\` heading are parsed
+as rules. Free-form prose is allowed; the brain reads it as guidance.
+
+## monitoring
+- Verify the workspace directory is writable
+- Log a heartbeat ping to the daily log
+
+## housekeeping
+- Once per day, compact MEMORY.md if it exceeds 1 MiB
+- Once per week, roll over old daily logs
 `;
 
 const DEFAULT_AGENTS = `# Agents

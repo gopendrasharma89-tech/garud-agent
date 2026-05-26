@@ -1,5 +1,59 @@
 # Changelog
 
+## [3.5.0] — 2026-05-22 — "Cumulus"
+
+**OpenClaw / Hermes parity release.** After research into OpenClaw's workspace files (SOUL/IDENTITY/AGENTS/USER/TOOLS/HEARTBEAT/MEMORY) and Hermes Agent's learning loop, this release closes the structural gap with both projects while staying zero-dependency.
+
+### 🔬 What we matched
+
+| Feature | OpenClaw / Hermes | Garud v3.4 | Garud v3.5 |
+|---|---|---|---|
+| SOUL.md (personality) | ✅ | ✅ | ✅ |
+| AGENTS.md (operating manual) | ✅ | ✅ | ✅ |
+| USER.md (user profile) | ✅ | ✅ | ✅ |
+| MEMORY.md (long-term) | ✅ | ✅ | ✅ |
+| **IDENTITY.md** (metadata card) | ✅ | ❌ | ✅ |
+| **TOOLS.md** (auto-catalog) | ✅ | ❌ | ✅ |
+| **HEARTBEAT.md** (declarative cron) | ✅ | ❌ | ✅ |
+| **Lazy-loaded memory topics** | ✅ Claude Code | ❌ | ✅ |
+| **Skill learning loop** | ✅ Hermes | ❌ | ✅ |
+| **`doctor` health audit** | ✅ OpenClaw | ❌ | ✅ |
+| **Slack v0 signature** | ✅ | ⚠️ generic HMAC | ✅ |
+| **Discord Ed25519** | ✅ | ⚠️ HMAC (wrong) | ✅ |
+
+### 🐛 Bug fixes
+- `/channel/slack` was using GitHub-style `x-hub-signature-256` HMAC, but Slack actually uses the v0 scheme: `v0=hmac(secret, "v0:ts:body")` with a 5-minute timestamp window. Replaced with `verifySlackV0()`.
+- `/channel/discord` was using HMAC, but **Discord requires Ed25519** verification over `timestamp+body` against the application's public key. Replaced with `verifyDiscordEd25519()` using Node's built-in `crypto.verify` (still zero deps).
+- `WorkspaceFiles.snapshot()` returned an incomplete view (missing IDENTITY + heartbeat rule count). Fixed.
+
+### 🆕 New subsystems
+- **`src/memory/memory-index.ts`** — Claude-Code-style MEMORY.md router. 200-line index cap, lazy-loaded `workspace/memory/<topic>.md` topic files, 256 KiB per-topic cap.
+- **`src/skills/skill-library.ts`** — Hermes-style learning loop. `extract({input,output,success})` captures successful tasks as reusable skills; `findRelevant(query, k)` scores via token overlap × `log(1+successCount)`. Skills are plain markdown with a YAML header.
+- **`src/doctor/doctor.ts`** — Structured health/config audit. Surfaces missing workspace files, empty policy rules, guest-allow on mutating ops, missing channel HMAC secrets, GitHub PAT-like env vars, empty tool registry.
+- **`src/channels/hmac-verify.ts`** extended with `verifySlackV0()` and `verifyDiscordEd25519()`.
+
+### 📝 New workspace files (auto-seeded on first read)
+- `IDENTITY.md` — metadata card (name, id, role, version, codename, homepage, license). 32 KiB cap.
+- `TOOLS.md` — auto-generated tool catalog. Regenerate via `POST /tools.md/regenerate`. 256 KiB cap.
+- `HEARTBEAT.md` — declarative recurring rules grouped under `## section` headings. Parsed via `parseHeartbeatRules()`. 64 KiB cap.
+
+### ✨ New built-in tools (+8 → 162 total)
+`memory.topic` · `memory.topics` · `memory.topic.write` · `skills.extract` · `skills.find` · `skills.size` · `identity.read` · `heartbeat.rules`
+
+### 🌐 New HTTP endpoints (+11)
+- `GET /identity` · `POST /identity`
+- `GET /tools.md` · `POST /tools.md/regenerate`
+- `GET /heartbeat/rules`
+- `GET /memory/index` · `GET /memory/topics`
+- `GET /memory/topic/<name>` · `POST /memory/topic/<name>`
+- `GET /skills` · `GET /skills/search?q=…&k=…` · `POST /skills/extract` · `GET /skills/<slug>`
+- `GET /doctor`
+
+### 📊 Stats
+- **623 tests pass** across 53 suites in ~18 s (+27 over v3.4)
+- **68 source files**, **53 test files**, **18,596 LoC**
+- 162 built-in tools, ~70 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.4.0] — 2026-05-21 — "Stratus"
 
 Hardening release: **HMAC for channels**, **HTTP for graph/crew**, **auto cost tracking on the brain**, plus 6 new tools.

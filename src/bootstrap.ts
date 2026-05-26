@@ -33,6 +33,8 @@ import { CostTracker } from './cost/cost-tracker.js';
 import { Tracer } from './tracing/span.js';
 import { reflectAndRevise, textHeuristicReflector } from './reflection/reflector.js';
 import { HeuristicPlanner } from './planning/planner.js';
+import { MemoryIndex } from './memory/memory-index.js';
+import { SkillLibrary } from './skills/skill-library.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -68,6 +70,8 @@ export interface BootstrapResult {
   embeddings: EmbeddingStore;
   costTracker: CostTracker;
   tracer: Tracer;
+  memoryIndex: MemoryIndex;
+  skillLibrary: SkillLibrary;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -103,6 +107,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     }
   };
   const planner = new HeuristicPlanner();
+  // v3.5 OpenClaw/Hermes parity
+  const memoryIndex = new MemoryIndex(config.storage.workspaceDir);
+  const skillLibrary = new SkillLibrary(path.join(config.storage.workspaceDir, 'skills'));
 
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
@@ -125,7 +132,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     costTracker,
     tracer,
     reflector,
-    planner
+    planner,
+    memoryIndex,
+    skillLibrary
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
   if (config.plugins?.length) {
@@ -323,7 +332,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
     inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
     longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat,
-    embeddings, costTracker, tracer
+    embeddings, costTracker, tracer,
+    memoryIndex, skillLibrary
   };
 }
 

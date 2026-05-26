@@ -38,9 +38,13 @@ export interface ServerDeps {
   channelSecrets?: {
     whatsapp?: string;
     telegram?: string;
+    /** Discord uses Ed25519. Provide the application's public key in hex. */
     discord?: string;
+    /** Slack uses the v0 scheme (`v0:ts:body`). Provide the signing secret. */
     slack?: string;
   };
+  memoryIndex?: import('./memory/memory-index.js').MemoryIndex;
+  skills?: import('./skills/skill-library.js').SkillLibrary;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -543,6 +547,120 @@ export function createServer(deps: ServerDeps): http.Server {
         return send(res, 200, { ok: true, active: deps.tracer.size(), recent: deps.tracer.recent(1000).length });
       }
 
+      // ===== v3.5 Cumulus: OpenClaw/Hermes parity =====
+      // IDENTITY.md
+      if (req.method === 'GET' && url.pathname === '/identity') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return send(res, 200, { ok: true, body: await deps.workspace.readIdentity() });
+      }
+      if (req.method === 'POST' && url.pathname === '/identity') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        try {
+          const { payload } = await readJson<{ body?: string }>(req, 32 * 1024);
+          if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body required' });
+          await deps.workspace.writeIdentity(payload.body);
+          return send(res, 200, { ok: true, bytes: Buffer.byteLength(payload.body, 'utf8') });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+
+      // TOOLS.md (raw text)
+      if (req.method === 'GET' && url.pathname === '/tools.md') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return sendText(res, 200, 'text/markdown; charset=utf-8', await deps.workspace.readTools());
+      }
+      if (req.method === 'POST' && url.pathname === '/tools.md/regenerate') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        const snapshot = deps.tools.list().map((t) => ({ name: t.name, description: (t as { description?: string }).description ?? '' }));
+        const body = await deps.workspace.regenerateTools(snapshot);
+        return send(res, 200, { ok: true, tools: snapshot.length, bytes: Buffer.byteLength(body, 'utf8') });
+      }
+
+      // HEARTBEAT.md rules
+      if (req.method === 'GET' && url.pathname === '/heartbeat/rules') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        return send(res, 200, { ok: true, rules: await deps.workspace.parseHeartbeatRules() });
+      }
+
+      // MEMORY.md index + memory/<topic>.md lazy loader
+      if (req.method === 'GET' && url.pathname === '/memory/index') {
+        if (!deps.memoryIndex) return send(res, 503, { ok: false, error: 'memoryIndex not configured' });
+        return send(res, 200, { ok: true, ...(await deps.memoryIndex.readIndex()) });
+      }
+      if (req.method === 'GET' && url.pathname === '/memory/topics') {
+        if (!deps.memoryIndex) return send(res, 503, { ok: false, error: 'memoryIndex not configured' });
+        return send(res, 200, { ok: true, topics: await deps.memoryIndex.listTopics() });
+      }
+      const topicGetMatch = req.method === 'GET' && /^\/memory\/topic\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (topicGetMatch) {
+        if (!deps.memoryIndex) return send(res, 503, { ok: false, error: 'memoryIndex not configured' });
+        const body = await deps.memoryIndex.loadTopic(topicGetMatch[1]!);
+        if (body === null) return send(res, 404, { ok: false, error: 'topic not found' });
+        return sendText(res, 200, 'text/markdown; charset=utf-8', body);
+      }
+      const topicPostMatch = req.method === 'POST' && /^\/memory\/topic\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (topicPostMatch) {
+        if (!deps.memoryIndex) return send(res, 503, { ok: false, error: 'memoryIndex not configured' });
+        try {
+          const { payload } = await readJson<{ body?: string }>(req, 256 * 1024);
+          if (typeof payload.body !== 'string') return send(res, 400, { ok: false, error: 'body required' });
+          const r = await deps.memoryIndex.saveTopic(topicPostMatch[1]!, payload.body);
+          return send(res, 200, { ok: true, ...r });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+
+      // Hermes-style skill library
+      if (req.method === 'GET' && url.pathname === '/skills') {
+        if (!deps.skills) return send(res, 503, { ok: false, error: 'skills not configured' });
+        return send(res, 200, { ok: true, slugs: await deps.skills.listSlugs() });
+      }
+      if (req.method === 'GET' && url.pathname === '/skills/search') {
+        if (!deps.skills) return send(res, 503, { ok: false, error: 'skills not configured' });
+        const query = url.searchParams.get('q') ?? '';
+        if (!query) return send(res, 400, { ok: false, error: 'q query parameter required' });
+        const k = Math.max(1, Math.min(50, Number(url.searchParams.get('k') ?? 5)));
+        return send(res, 200, { ok: true, results: await deps.skills.findRelevant(query, k) });
+      }
+      if (req.method === 'POST' && url.pathname === '/skills/extract') {
+        if (!deps.skills) return send(res, 503, { ok: false, error: 'skills not configured' });
+        try {
+          const { payload } = await readJson<{ input?: string; output?: string; success?: boolean; name?: string; when?: string }>(req, 256 * 1024);
+          if (!payload.input || !payload.output) return send(res, 400, { ok: false, error: 'input and output required' });
+          const extractArgs: { input: string; output: string; success: boolean; name?: string; when?: string } = {
+            input: payload.input,
+            output: payload.output,
+            success: payload.success ?? true
+          };
+          if (payload.name !== undefined) extractArgs.name = payload.name;
+          if (payload.when !== undefined) extractArgs.when = payload.when;
+          const skill = await deps.skills.extract(extractArgs);
+          return send(res, 200, { ok: true, skill });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+      const skillReadMatch = req.method === 'GET' && /^\/skills\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (skillReadMatch) {
+        if (!deps.skills) return send(res, 503, { ok: false, error: 'skills not configured' });
+        const s = await deps.skills.readOrNull(skillReadMatch[1]!);
+        if (!s) return send(res, 404, { ok: false, error: 'skill not found' });
+        return send(res, 200, { ok: true, skill: s });
+      }
+
+      // garud doctor
+      if (req.method === 'GET' && url.pathname === '/doctor') {
+        const { runDoctor } = await import('./doctor/doctor.js');
+        const report = await runDoctor({
+          config: deps.config,
+          workspaceDir: deps.config.storage?.workspaceDir ?? './workspace',
+          channelSecretsPresent: {
+            whatsapp: !!deps.channelSecrets?.whatsapp,
+            telegram: !!deps.channelSecrets?.telegram,
+            discord: !!deps.channelSecrets?.discord,
+            slack: !!deps.channelSecrets?.slack
+          },
+          toolCount: deps.tools.size()
+        });
+        return send(res, 200, report);
+      }
+
       // ===== v3.4 Stratus: graph & crew run endpoints =====
       // POST /graph/run executes a small, declarative graph spec without
       // requiring code. Nodes can return a `nextState` patch + an optional
@@ -688,12 +806,23 @@ export function createServer(deps: ServerDeps): http.Server {
         try { raw = await readBody(req, 512 * 1024); }
         catch { return send(res, 413, { ok: false, error: 'payload too large' }); }
 
-        // HMAC verification when a secret is configured for this channel.
+        // Channel-specific signature verification when a secret/key is set.
         const secret = deps.channelSecrets?.[channel];
         if (secret) {
-          const sig = (req.headers['x-hub-signature-256'] ?? req.headers['x-garud-signature']) as string | string[] | undefined;
-          const v = verifyHmac(secret, raw, sig);
-          if (!v.ok) return send(res, 401, { ok: false, error: `hmac: ${v.reason}` });
+          if (channel === 'slack') {
+            const { verifySlackV0 } = await import('./channels/hmac-verify.js');
+            const v = verifySlackV0(secret, raw, req.headers['x-slack-signature'] as string | string[] | undefined, req.headers['x-slack-request-timestamp'] as string | string[] | undefined);
+            if (!v.ok) return send(res, 401, { ok: false, error: `slack-sig: ${v.reason}` });
+          } else if (channel === 'discord') {
+            const { verifyDiscordEd25519 } = await import('./channels/hmac-verify.js');
+            const v = await verifyDiscordEd25519(secret, raw, req.headers['x-signature-ed25519'] as string | string[] | undefined, req.headers['x-signature-timestamp'] as string | string[] | undefined);
+            if (!v.ok) return send(res, 401, { ok: false, error: `discord-sig: ${v.reason}` });
+          } else {
+            // WhatsApp / generic: plain HMAC-SHA256 over the body.
+            const sig = (req.headers['x-hub-signature-256'] ?? req.headers['x-garud-signature']) as string | string[] | undefined;
+            const v = verifyHmac(secret, raw, sig);
+            if (!v.ok) return send(res, 401, { ok: false, error: `hmac: ${v.reason}` });
+          }
         }
 
         let payload: unknown = {};

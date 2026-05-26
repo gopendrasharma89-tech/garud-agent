@@ -4,7 +4,7 @@ import { AddressInfo } from 'node:net';
 import { bootstrap } from '../src/bootstrap.js';
 import { defaultConfig } from '../src/config.js';
 import { createServer } from '../src/server.js';
-import { signHmac } from '../src/channels/hmac-verify.js';
+import { createHmac } from 'node:crypto';
 import { AppConfig } from '../src/types.js';
 
 interface Harness {
@@ -129,26 +129,30 @@ describe('v3.4 HTTP endpoints', () => {
     expect(r.body.ok).toBe(false);
   });
 
-  it('POST /channel/slack accepts correctly signed payload', async () => {
+  it('POST /channel/slack accepts correctly v0-signed payload', async () => {
     harness = await startHarness({ slack: 'top-secret' });
     const body = JSON.stringify({ type: 'url_verification', challenge: 'abc123' });
-    const sig = signHmac('top-secret', body);
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = `v0=${createHmac('sha256', 'top-secret').update(`v0:${ts}:${body}`).digest('hex')}`;
     const r = await fetchJson(`${harness.baseUrl}/channel/slack`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig },
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-slack-signature': sig, 'x-slack-request-timestamp': ts },
       body
     });
     expect(r.status).toBe(200);
     expect(r.body).toBe('abc123');
   });
 
-  it('POST /channel/slack rejects tampered body', async () => {
+  it('POST /channel/slack rejects tampered body under v0', async () => {
     harness = await startHarness({ slack: 'top-secret' });
-    const realBody = JSON.stringify({ type: 'url_verification', challenge: 'good' });
-    const sig = signHmac('top-secret', realBody);
-    const tamperedBody = JSON.stringify({ type: 'url_verification', challenge: 'evil' });
+    const real = JSON.stringify({ type: 'url_verification', challenge: 'good' });
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = `v0=${createHmac('sha256', 'top-secret').update(`v0:${ts}:${real}`).digest('hex')}`;
+    const tampered = JSON.stringify({ type: 'url_verification', challenge: 'evil' });
     const r = await fetchJson(`${harness.baseUrl}/channel/slack`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': sig },
-      body: tamperedBody
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-slack-signature': sig, 'x-slack-request-timestamp': ts },
+      body: tampered
     });
     expect(r.status).toBe(401);
   });

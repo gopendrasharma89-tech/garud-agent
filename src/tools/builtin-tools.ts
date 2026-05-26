@@ -25,6 +25,8 @@ export interface BuiltinToolDeps {
   tracer?: import('../tracing/span.js').Tracer;
   reflector?: { revise(answer: string, goal?: string): Promise<{ output: string; iterations: number; accepted: boolean; critiques: string[] }> };
   planner?: import('../planning/planner.js').HeuristicPlanner;
+  memoryIndex?: import('../memory/memory-index.js').MemoryIndex;
+  skillLibrary?: import('../skills/skill-library.js').SkillLibrary;
 }
 
 export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
@@ -2273,6 +2275,95 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           const { signHmac } = await import('../channels/hmac-verify.js');
           return { content: signHmac(p.secret, p.body, p.algorithm ?? 'sha256') };
         } catch (e) { return { content: `hmac.sign: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'memory.topic',
+      description: 'Lazy-load a single MEMORY topic file. Input: JSON {domain}. Returns body or null.',
+      execute: async (input) => {
+        if (!deps.memoryIndex) return { content: 'memory.topic: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { domain: string };
+          if (!p.domain) return { content: 'memory.topic: domain required', error: true };
+          const body = await deps.memoryIndex.loadTopic(p.domain);
+          return { content: JSON.stringify({ domain: p.domain, body }) };
+        } catch (e) { return { content: `memory.topic: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'memory.topics',
+      description: 'List available memory topic file names.',
+      execute: async () => {
+        if (!deps.memoryIndex) return { content: 'memory.topics: not enabled', error: true };
+        return { content: JSON.stringify({ topics: await deps.memoryIndex.listTopics() }) };
+      }
+    },
+    {
+      name: 'memory.topic.write',
+      description: 'Save (overwrite) a memory topic file. Input: JSON {domain, body}. Max 256 KiB.',
+      execute: async (input) => {
+        if (!deps.memoryIndex) return { content: 'memory.topic.write: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { domain: string; body: string };
+          if (!p.domain || typeof p.body !== 'string') return { content: 'memory.topic.write: domain and body required', error: true };
+          const r = await deps.memoryIndex.saveTopic(p.domain, p.body);
+          return { content: JSON.stringify(r) };
+        } catch (e) { return { content: `memory.topic.write: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'skills.extract',
+      description: 'Hermes-style: capture a successful task as a reusable skill. Input: JSON {input, output, success?, name?, when?}.',
+      execute: async (input) => {
+        if (!deps.skillLibrary) return { content: 'skills.extract: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { input: string; output: string; success?: boolean; name?: string; when?: string };
+          if (!p.input || !p.output) return { content: 'skills.extract: input and output required', error: true };
+          const args: { input: string; output: string; success: boolean; name?: string; when?: string } = {
+            input: p.input, output: p.output, success: p.success ?? true
+          };
+          if (p.name !== undefined) args.name = p.name;
+          if (p.when !== undefined) args.when = p.when;
+          const skill = await deps.skillLibrary.extract(args);
+          return { content: JSON.stringify({ skill }) };
+        } catch (e) { return { content: `skills.extract: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'skills.find',
+      description: 'Hermes-style retrieval: find skills relevant to a query. Input: JSON {query, k?}.',
+      execute: async (input) => {
+        if (!deps.skillLibrary) return { content: 'skills.find: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { query: string; k?: number };
+          if (!p.query) return { content: 'skills.find: query required', error: true };
+          const results = await deps.skillLibrary.findRelevant(p.query, p.k ?? 5);
+          return { content: JSON.stringify({ results }) };
+        } catch (e) { return { content: `skills.find: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'skills.size',
+      description: 'Return number of skills in the library.',
+      execute: async () => {
+        if (!deps.skillLibrary) return { content: 'skills.size: not enabled', error: true };
+        return { content: JSON.stringify({ size: await deps.skillLibrary.size() }) };
+      }
+    },
+    {
+      name: 'identity.read',
+      description: 'Read IDENTITY.md (agent metadata card).',
+      execute: async () => {
+        if (!deps.workspace) return { content: 'identity.read: not enabled', error: true };
+        return { content: await deps.workspace.readIdentity() };
+      }
+    },
+    {
+      name: 'heartbeat.rules',
+      description: 'Parse HEARTBEAT.md into structured rules.',
+      execute: async () => {
+        if (!deps.workspace) return { content: 'heartbeat.rules: not enabled', error: true };
+        return { content: JSON.stringify({ rules: await deps.workspace.parseHeartbeatRules() }) };
       }
     },
     {

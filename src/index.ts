@@ -16,7 +16,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const { gateway, scheduler, logger, tools, metrics, broadcastChannel, longterm, dailyLog, subagent, nodes, hooks, workspace, heartbeat, embeddings, costTracker, tracer } = await bootstrap(config);
+  const { gateway, scheduler, logger, tools, metrics, broadcastChannel, longterm, dailyLog, subagent, nodes, hooks, workspace, heartbeat, embeddings, costTracker, tracer, memoryIndex, skillLibrary } = await bootstrap(config);
   heartbeat.start();
 
   if (process.argv.includes('--demo')) {
@@ -49,6 +49,7 @@ async function main(): Promise<void> {
     wsClientCount: () => wsServer?.size() ?? 0,
     longterm, dailyLog, subagent, nodes, hooks, workspace, heartbeat,
     embeddings, costTracker, tracer,
+    memoryIndex, skills: skillLibrary,
     channelSecrets: {
       ...(process.env.GARUD_WHATSAPP_SECRET ? { whatsapp: process.env.GARUD_WHATSAPP_SECRET } : {}),
       ...(process.env.GARUD_TELEGRAM_SECRET ? { telegram: process.env.GARUD_TELEGRAM_SECRET } : {}),
