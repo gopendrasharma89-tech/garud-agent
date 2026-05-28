@@ -45,6 +45,7 @@ export interface ServerDeps {
   };
   memoryIndex?: import('./memory/memory-index.js').MemoryIndex;
   skills?: import('./skills/skill-library.js').SkillLibrary;
+  heartbeatScheduler?: import('./heartbeat/heartbeat-scheduler.js').HeartbeatScheduler;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -579,6 +580,27 @@ export function createServer(deps: ServerDeps): http.Server {
       if (req.method === 'GET' && url.pathname === '/heartbeat/rules') {
         if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
         return send(res, 200, { ok: true, rules: await deps.workspace.parseHeartbeatRules() });
+      }
+      // v3.6: scheduled (active) heartbeat rules with parsed schedule kind
+      if (req.method === 'GET' && url.pathname === '/heartbeat/scheduled') {
+        if (!deps.heartbeatScheduler) return send(res, 503, { ok: false, error: 'heartbeatScheduler not configured' });
+        return send(res, 200, { ok: true, scheduled: deps.heartbeatScheduler.list() });
+      }
+      // v3.6: workspace tarball download (uses Node's built-in zlib + a tiny tar writer)
+      if (req.method === 'GET' && url.pathname === '/workspace.tgz') {
+        const dir = deps.config.storage?.workspaceDir;
+        if (!dir) return send(res, 503, { ok: false, error: 'workspaceDir not configured' });
+        try {
+          const { buildWorkspaceTarball } = await import('./workspace/tarball.js');
+          const buf = await buildWorkspaceTarball(dir);
+          res.writeHead(200, {
+            'content-type': 'application/gzip',
+            'content-length': String(buf.length),
+            'content-disposition': 'attachment; filename="workspace.tgz"'
+          });
+          res.end(buf);
+          return;
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
       }
 
       // MEMORY.md index + memory/<topic>.md lazy loader

@@ -35,6 +35,8 @@ import { reflectAndRevise, textHeuristicReflector } from './reflection/reflector
 import { HeuristicPlanner } from './planning/planner.js';
 import { MemoryIndex } from './memory/memory-index.js';
 import { SkillLibrary } from './skills/skill-library.js';
+import { AutoSkillExtractor } from './skills/auto-skill-extractor.js';
+import { HeartbeatScheduler } from './heartbeat/heartbeat-scheduler.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -72,6 +74,7 @@ export interface BootstrapResult {
   tracer: Tracer;
   memoryIndex: MemoryIndex;
   skillLibrary: SkillLibrary;
+  heartbeatScheduler: HeartbeatScheduler;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -110,6 +113,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   // v3.5 OpenClaw/Hermes parity
   const memoryIndex = new MemoryIndex(config.storage.workspaceDir);
   const skillLibrary = new SkillLibrary(path.join(config.storage.workspaceDir, 'skills'));
+  // v3.6: HEARTBEAT.md → timers. Rules are wired below once `subagent` and
+  // `dailyLog` exist; the scheduler itself can be created up-front.
+  const heartbeatScheduler = new HeartbeatScheduler();
 
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
@@ -183,9 +189,14 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     ? new ToolQuotaManager({ defaultLimit: config.quotas.defaultDailyLimit })
     : new ToolQuotaManager();
 
-  // Wrap the brain so every plan()/compose() automatically records into
-  // the CostTracker. Transparent to AgentRuntime.
-  const brain: BrainProvider = new AutoCostBrain(buildBrain(config), costTracker);
+  // Brain pipeline: raw provider → AutoSkillExtractor (learn from replies)
+  //              → AutoCostBrain (record tokens/calls)
+  // Order matters: AutoCostBrain is outermost so it sees the *final* reply
+  // size; AutoSkillExtractor sits inside so a learning failure can't break
+  // cost accounting.
+  const baseBrain = buildBrain(config);
+  const learningBrain = new AutoSkillExtractor(baseBrain, skillLibrary);
+  const brain: BrainProvider = new AutoCostBrain(learningBrain, costTracker);
 
   const audit = new AuditLogger();
   const inMemoryAudit = new InMemoryAuditLog();
@@ -328,12 +339,25 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const heartbeat = new Heartbeat(60_000, () => subagent.pending(), logger.child('heartbeat'));
   lazyDeps.heartbeat = heartbeat;
 
+  // v3.6: parse HEARTBEAT.md and schedule rules. Each fire is recorded as
+  // a daily-log entry; the brain can also subscribe via hooks later.
+  try {
+    const rules = await workspace.parseHeartbeatRules();
+    const hbLog = logger.child('heartbeat-rules');
+    heartbeatScheduler.schedule(rules, (event) => {
+      hbLog.info('heartbeat rule fired', { section: event.section, rule: event.rule, kind: event.kind });
+      dailyLog.append('system', `heartbeat[${event.section}] ${event.rule}`, { kind: event.kind }).catch(() => { /* best-effort */ });
+    });
+  } catch (e) {
+    logger.warn('heartbeat scheduler init failed', { error: (e as Error).message });
+  }
+
   return {
     gateway, runtime, tools, policy, audit, pairing, cache, quotas, conversation, metrics,
     inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
     longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat,
     embeddings, costTracker, tracer,
-    memoryIndex, skillLibrary
+    memoryIndex, skillLibrary, heartbeatScheduler
   };
 }
 

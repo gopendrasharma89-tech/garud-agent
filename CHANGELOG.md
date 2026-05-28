@@ -1,5 +1,48 @@
 # Changelog
 
+## [3.6.0] — 2026-05-23 — "Nimbus"
+
+The v3.5 release added Hermes-style **structure**; v3.6 makes it **actually do something**: skills are auto-extracted from successful agent replies, HEARTBEAT.md rules fire on real timers, and the CLI `doctor` matches the HTTP report.
+
+### 🐛 Bug fixes
+- `parseHeartbeatSchedule('Send the daily report daily at 8:00')` was matching the first `daily` in "daily report" and defaulting to 09:00. Split into `DAILY_AT_RE` (priority) and `DAILY_BARE_RE` (fallback).
+- CLI `doctor` was hand-rolled and out of sync with `runDoctor()` over HTTP. Both now share the same structured report (and support `--json=true`).
+- `runDoctor` flagged every `GARUD_*_SECRET` env var as a leak. They're the *expected* configuration; now reported as `env.garud-secrets / ok`.
+- `Heartbeat.md` rules were parsed but never executed. New `HeartbeatScheduler` actually runs them.
+- `AutoCostBrain` didn't see the *learned* reply; v3.6 puts `AutoSkillExtractor` *inside* `AutoCostBrain` so cost accounting captures the final reply size and learning failures can't break cost.
+
+### 🧠 New: Hermes-style auto-learning loop
+- `src/skills/auto-skill-extractor.ts` — BrainProvider decorator. After every `compose()` returning a non-trivial, error-free reply, fire-and-forgets a `SkillLibrary.extract()` call. Repeated similar prompts bump `successCount` rather than spamming new skills.
+- Wired in `bootstrap()` between the raw brain and `AutoCostBrain`.
+
+### ⏰ New: HEARTBEAT.md → real timers
+- `src/heartbeat/heartbeat-scheduler.ts` — parses rules into one of three schedule kinds:
+  - `every Ns|m|h|d|w` → fixed interval
+  - `daily at HH:MM` (12h or 24h) → daily fire
+  - `weekly` / `once a week` → 7-day interval
+- Unscheduled rules are still surfaced via `GET /heartbeat/scheduled` so the brain can interpret prose at runtime.
+- Each fire appends a `system` entry to the daily log via existing `DailyLog.append()`.
+- All timers `unref()`-ed so they never block process exit.
+
+### 📦 New: workspace tarball download
+- `GET /workspace.tgz` returns a gzipped tar of the workspace dir.
+- Pure-Node tar writer (ustar format) + `zlib.gzipSync` — still zero deps.
+- Skips `node_modules`, `.git`, `dist`, `.tmp`. Caps: 5 MiB per file, 32 MiB total archive.
+
+### 🩺 CLI `garud doctor` upgrade
+- Now uses `runDoctor()` so output matches the HTTP `/doctor` endpoint exactly.
+- ANSI-coloured severity tags (`OK`, `INFO`, `WARN`, `ERROR`).
+- `garud doctor --json=true` for machine-readable output.
+
+### 🌐 New HTTP endpoints (+2)
+- `GET /heartbeat/scheduled` — active scheduled rules with parsed `kind` / `everyMs` / `at`
+- `GET /workspace.tgz` — gzipped tar of the workspace directory
+
+### 📊 Stats
+- **637 tests pass** across 54 suites in ~21 s (+14 over v3.5)
+- **71 source files**, **54 test files**, **19,073 LoC**
+- 162 built-in tools, ~72 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.5.0] — 2026-05-22 — "Cumulus"
 
 **OpenClaw / Hermes parity release.** After research into OpenClaw's workspace files (SOUL/IDENTITY/AGENTS/USER/TOOLS/HEARTBEAT/MEMORY) and Hermes Agent's learning loop, this release closes the structural gap with both projects while staying zero-dependency.

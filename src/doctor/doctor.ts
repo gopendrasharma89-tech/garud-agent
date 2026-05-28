@@ -93,12 +93,19 @@ export async function runDoctor(input: DoctorInput): Promise<DoctorReport> {
     checks.push({ id: 'storage.workspaceDir', severity: 'error', message: 'persistent storage enabled but workspaceDir is empty', fix: 'set config.storage.workspaceDir' });
   }
 
-  // 5. Env-variable leaks (heuristic; we never print the value)
+  // 5. Env-variable leaks (heuristic; we never print the value).
+  // GARUD_*_SECRET vars are *expected* (we documented them); they don't
+  // count as a leak, only as informational.
   const suspectEnv = Object.keys(process.env).filter((k) => /TOKEN|SECRET|API_KEY|PASSWORD/.test(k));
-  if (suspectEnv.length > 0) {
-    checks.push({ id: 'env.secrets', severity: 'info', message: `${suspectEnv.length} secret-like env vars detected (never logged): ${suspectEnv.slice(0, 5).join(', ')}${suspectEnv.length > 5 ? '\u2026' : ''}` });
+  const expectedGarudVars = suspectEnv.filter((k) => /^GARUD_/.test(k));
+  const otherSuspect = suspectEnv.filter((k) => !/^GARUD_/.test(k));
+  if (expectedGarudVars.length > 0) {
+    checks.push({ id: 'env.garud-secrets', severity: 'ok', message: `${expectedGarudVars.length} GARUD_* secret env var${expectedGarudVars.length === 1 ? '' : 's'} present (expected)` });
   }
-  for (const k of suspectEnv) {
+  if (otherSuspect.length > 0) {
+    checks.push({ id: 'env.secrets', severity: 'info', message: `${otherSuspect.length} secret-like env vars detected (never logged): ${otherSuspect.slice(0, 5).join(', ')}${otherSuspect.length > 5 ? '\u2026' : ''}` });
+  }
+  for (const k of otherSuspect) {
     const v = process.env[k] ?? '';
     if (/^ghp_[A-Za-z0-9]{30,}/.test(v) || /^github_pat_/.test(v)) {
       checks.push({ id: `env.${k}`, severity: 'warn', message: `${k} looks like a GitHub PAT`, fix: 'store in a secrets manager, not the shell env' });

@@ -21,7 +21,7 @@
 
 **Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **140 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
-> **Version:** 3.5.0 "Cumulus" · Released 2026-05-22
+> **Version:** 3.6.0 "Nimbus" · Released 2026-05-23
 
 ## ✨ Channel adapters (v3.0)
 
@@ -43,7 +43,7 @@ workspace/
 ├── users/
 │   └── alice.md       # per-user profile
 └── logs/
-    └── 2026-05-22.md  # daily activity log
+    └── 2026-05-23.md  # daily activity log
 ```
 
 ## ✨ Heartbeat
@@ -60,7 +60,7 @@ The heartbeat subsystem performs periodic self-checks (default 60s) emitting `{u
 - 📊 **Built-in dashboard** at `/` and **Prometheus metrics** at `/metrics`
 - 🧾 **Full audit log** with replay endpoint
 - ⏰ **Cron-style scheduler** for recurring messages
-- 🦅 **Mascot** — `garud mascot` shows the Cumulus falcon
+- 🦅 **Mascot** — `garud mascot` shows the Nimbus falcon
 - 🪶 **Zero runtime dependencies**, **strict TypeScript**, **516 tests** in ~14 s
 
 ## 🚀 Quick start
@@ -70,7 +70,7 @@ git clone https://github.com/gopendrasharma89-tech/garud-agent.git
 cd garud-agent
 npm install
 npm run build
-npm test                    # 623 tests pass
+npm test                    # 637 tests pass
 npm start                   # boot HTTP server on :3010
 ```
 
@@ -78,7 +78,7 @@ CLI:
 ```bash
 npm run cli help            # list commands (shows mascot too)
 npm run cli mascot          # show just the falcon
-npm run cli version         # garud-agent 3.5.0
+npm run cli version         # garud-agent 3.6.0
 npm run cli tools           # list all 162 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL
@@ -113,13 +113,13 @@ npm run cli repl            # interactive REPL
 
 | Metric | Value |
 |---|---|
-| Source files | 68 |
-| Test files | 53 |
-| Lines of TypeScript | 18,596 |
+| Source files | 71 |
+| Test files | 54 |
+| Lines of TypeScript | 19,073 |
 | Built-in tools | 162 |
-| HTTP endpoints | ~70 |
-| Test suites | 53 |
-| Tests | 623 (all passing) |
+| HTTP endpoints | ~72 |
+| Test suites | 54 |
+| Tests | 637 (all passing) |
 | Test runtime | ~17 s |
 | Runtime dependencies | 0 |
 

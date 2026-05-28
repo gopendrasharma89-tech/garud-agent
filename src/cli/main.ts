@@ -330,39 +330,31 @@ async function main(): Promise<void> {
     }
 
     case 'doctor': {
-      const checks: Array<{ name: string; ok: boolean; detail?: string }> = [];
-      checks.push({ name: 'workspace dir', ok: !!config.storage.workspaceDir, detail: config.storage.workspaceDir });
-      checks.push({ name: 'persistence', ok: config.storage.persistent });
-      checks.push({ name: 'tools registered', ok: tools.size() > 0, detail: `${tools.size()} tools` });
-      checks.push({ name: 'channels', ok: gateway.channels.size > 0, detail: `${gateway.channels.size} channels` });
-      checks.push({
-        name: 'brain provider',
-        ok: config.brain.provider === 'deterministic'
-          || (!!config.brain.apiKey && !!config.brain.apiBase && !!config.brain.model),
-        detail: config.brain.provider
+      // v3.6: use the structured runDoctor() report so CLI and HTTP agree.
+      const { runDoctor } = await import('../doctor/doctor.js');
+      const report = await runDoctor({
+        config,
+        workspaceDir: config.storage.workspaceDir,
+        channelSecretsPresent: {
+          whatsapp: !!process.env.GARUD_WHATSAPP_SECRET,
+          telegram: !!process.env.GARUD_TELEGRAM_SECRET,
+          discord: !!process.env.GARUD_DISCORD_SECRET,
+          slack: !!process.env.GARUD_SLACK_SECRET
+        },
+        toolCount: tools.size()
       });
-      checks.push({ name: 'rate limiting', ok: !!config.rateLimit.enabled });
-      checks.push({ name: 'auth token', ok: !!config.authToken, detail: config.authToken ? 'set' : 'open access' });
-      checks.push({ name: 'webhook signing', ok: !!config.webhook.signingSecret });
-      checks.push({ name: 'pairing enabled', ok: !!config.pairing.enabled });
-      checks.push({ name: 'scheduler enabled', ok: !!config.scheduler.enabled });
-      checks.push({ name: 'cache enabled', ok: !!config.cache.enabled });
-      checks.push({ name: 'metrics enabled', ok: !!config.metrics.enabled });
-      checks.push({ name: 'dashboard enabled', ok: !!config.dashboard.enabled });
-      checks.push({ name: 'websocket enabled', ok: !!config.websocket.enabled });
-      checks.push({ name: 'conversation history', ok: config.conversation.maxTurns > 0, detail: `max=${config.conversation.maxTurns}` });
-      checks.push({ name: 'memory dedup', ok: config.memory.dedupThreshold > 0, detail: `threshold=${config.memory.dedupThreshold}` });
-      checks.push({
-        name: 'config issues',
-        ok: validateConfig(config).length === 0,
-        detail: `${validateConfig(config).length} issues`
-      });
-      let allOk = true;
-      for (const c of checks) {
-        if (!c.ok) allOk = false;
-        process.stdout.write(`[${c.ok ? 'OK' : 'WARN'}] ${c.name}${c.detail ? ` :: ${c.detail}` : ''}\n`);
+      if (args.flags.json === 'true' || args.flags.json === '1') {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        const colour: Record<string, string> = { ok: '\x1b[32m', info: '\x1b[36m', warn: '\x1b[33m', error: '\x1b[31m' };
+        const reset = '\x1b[0m';
+        for (const c of report.checks) {
+          const tag = c.severity.toUpperCase().padEnd(5);
+          process.stdout.write(`${colour[c.severity] ?? ''}[${tag}]${reset} ${c.id} — ${c.message}${c.fix ? ` → ${c.fix}` : ''}\n`);
+        }
+        process.stdout.write(`\nsummary: ${report.summary.ok} ok, ${report.summary.info} info, ${report.summary.warn} warn, ${report.summary.error} error\n`);
+        process.stdout.write(report.ok ? 'all critical checks passed.\n' : 'some warnings/errors detected.\n');
       }
-      process.stdout.write(allOk ? '\nall checks passed.\n' : '\nsome warnings detected.\n');
       break;
     }
 
