@@ -50,6 +50,7 @@ async function main(): Promise<void> {
     longterm, dailyLog, subagent, nodes, hooks, workspace, heartbeat,
     embeddings, costTracker, tracer,
     memoryIndex, skills: skillLibrary, heartbeatScheduler,
+    ...(process.env.GARUD_WORKSPACE_SIGN_SECRET ? { workspaceSignSecret: process.env.GARUD_WORKSPACE_SIGN_SECRET } : {}),
     channelSecrets: {
       ...(process.env.GARUD_WHATSAPP_SECRET ? { whatsapp: process.env.GARUD_WHATSAPP_SECRET } : {}),
       ...(process.env.GARUD_TELEGRAM_SECRET ? { telegram: process.env.GARUD_TELEGRAM_SECRET } : {}),

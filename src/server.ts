@@ -46,6 +46,12 @@ export interface ServerDeps {
   memoryIndex?: import('./memory/memory-index.js').MemoryIndex;
   skills?: import('./skills/skill-library.js').SkillLibrary;
   heartbeatScheduler?: import('./heartbeat/heartbeat-scheduler.js').HeartbeatScheduler;
+  /**
+   * Secret for signing `/workspace.tgz` URLs. When set, the endpoint requires
+   * a `?token=<sig>.<exp>` query parameter produced by `signUrlToken`.
+   * When unset the endpoint accepts unauthenticated GETs (backwards-compatible).
+   */
+  workspaceSignSecret?: string;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -586,10 +592,15 @@ export function createServer(deps: ServerDeps): http.Server {
         if (!deps.heartbeatScheduler) return send(res, 503, { ok: false, error: 'heartbeatScheduler not configured' });
         return send(res, 200, { ok: true, scheduled: deps.heartbeatScheduler.list() });
       }
-      // v3.6: workspace tarball download (uses Node's built-in zlib + a tiny tar writer)
+      // v3.6/v3.7: workspace tarball download (signed-URL gated when secret set)
       if (req.method === 'GET' && url.pathname === '/workspace.tgz') {
         const dir = deps.config.storage?.workspaceDir;
         if (!dir) return send(res, 503, { ok: false, error: 'workspaceDir not configured' });
+        if (deps.workspaceSignSecret) {
+          const { verifyUrlToken } = await import('./auth/signed-url.js');
+          const v = verifyUrlToken(deps.workspaceSignSecret, '/workspace.tgz', url.searchParams.get('token') ?? undefined);
+          if (!v.ok) return send(res, 401, { ok: false, error: `signed-url: ${v.reason}` });
+        }
         try {
           const { buildWorkspaceTarball } = await import('./workspace/tarball.js');
           const buf = await buildWorkspaceTarball(dir);
@@ -601,6 +612,47 @@ export function createServer(deps: ServerDeps): http.Server {
           res.end(buf);
           return;
         } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v3.7: mint a short-lived signed URL for workspace.tgz
+      if (req.method === 'POST' && url.pathname === '/workspace.tgz/sign') {
+        if (!deps.workspaceSignSecret) return send(res, 503, { ok: false, error: 'workspaceSignSecret not configured' });
+        try {
+          const { payload } = await readJson<{ ttlSeconds?: number }>(req);
+          const ttl = Math.max(30, Math.min(3600, payload.ttlSeconds ?? 300));
+          const exp = Math.floor(Date.now() / 1000) + ttl;
+          const { signUrlToken } = await import('./auth/signed-url.js');
+          const token = signUrlToken(deps.workspaceSignSecret, '/workspace.tgz', exp);
+          return send(res, 200, { ok: true, token, exp, ttlSeconds: ttl, url: `/workspace.tgz?token=${encodeURIComponent(token)}` });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v3.7: AGENTS.md persona endpoints
+      if (req.method === 'GET' && url.pathname === '/agents') {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        const { parseAgentsMd } = await import('./workspace/agents-parser.js');
+        const personas = parseAgentsMd(await deps.workspace.readAgents());
+        return send(res, 200, { ok: true, personas });
+      }
+      const personaMatch = req.method === 'GET' && /^\/agents\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (personaMatch) {
+        if (!deps.workspace) return send(res, 503, { ok: false, error: 'workspace not configured' });
+        const { parseAgentsMd, findPersona } = await import('./workspace/agents-parser.js');
+        const personas = parseAgentsMd(await deps.workspace.readAgents());
+        const persona = findPersona(personas, personaMatch[1]!);
+        if (!persona) return send(res, 404, { ok: false, error: 'persona not found' });
+        return send(res, 200, { ok: true, persona });
+      }
+
+      // v3.7: skills prune
+      if (req.method === 'POST' && url.pathname === '/skills/prune') {
+        if (!deps.skills) return send(res, 503, { ok: false, error: 'skills not configured' });
+        try {
+          let opts: { minSuccessCount?: number; maxAgeMs?: number; dryRun?: boolean } = {};
+          try { opts = (await readJson<typeof opts>(req)).payload; } catch { /* default */ }
+          const result = await deps.skills.prune(opts);
+          return send(res, 200, { ok: true, ...result });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
       }
 
       // MEMORY.md index + memory/<topic>.md lazy loader

@@ -2359,6 +2359,44 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       }
     },
     {
+      name: 'agents.list',
+      description: 'List personas defined in AGENTS.md.',
+      execute: async () => {
+        if (!deps.workspace) return { content: 'agents.list: not enabled', error: true };
+        const { parseAgentsMd } = await import('../workspace/agents-parser.js');
+        const personas = parseAgentsMd(await deps.workspace.readAgents());
+        return { content: JSON.stringify({ personas }) };
+      }
+    },
+    {
+      name: 'agents.find',
+      description: 'Find a persona by slug. Input: JSON {slug}. Falls back to default.',
+      execute: async (input) => {
+        if (!deps.workspace) return { content: 'agents.find: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { slug?: string };
+          const { parseAgentsMd, findPersona } = await import('../workspace/agents-parser.js');
+          const personas = parseAgentsMd(await deps.workspace.readAgents());
+          const persona = findPersona(personas, p.slug);
+          if (!persona) return { content: 'agents.find: persona not found', error: true };
+          return { content: JSON.stringify({ persona }) };
+        } catch (e) { return { content: `agents.find: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'skills.prune',
+      description: 'Prune low-value skills. Input: optional JSON {minSuccessCount, maxAgeMs, dryRun}.',
+      execute: async (input) => {
+        if (!deps.skillLibrary) return { content: 'skills.prune: not enabled', error: true };
+        let opts: { minSuccessCount?: number; maxAgeMs?: number; dryRun?: boolean } = {};
+        if (input && input.trim()) {
+          try { opts = JSON.parse(input); } catch { /* default */ }
+        }
+        const result = await deps.skillLibrary.prune(opts);
+        return { content: JSON.stringify(result) };
+      }
+    },
+    {
       name: 'heartbeat.rules',
       description: 'Parse HEARTBEAT.md into structured rules.',
       execute: async () => {

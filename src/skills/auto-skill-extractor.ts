@@ -21,8 +21,10 @@ export class AutoSkillExtractor implements BrainProvider {
     private readonly inner: BrainProvider,
     private readonly library: SkillLibrary,
     private readonly opts: {
-      /** Minimum reply length to consider extracting. Default 40 chars. */
+      /** Minimum reply length to consider extracting. Default 60 chars (v3.7). */
       minReplyChars?: number;
+      /** Minimum input length to consider extracting. Default 20 chars (v3.7). */
+      minInputChars?: number;
       /** Max input chars to capture (longer is truncated). Default 1000. */
       maxInputChars?: number;
     } = {}
@@ -41,12 +43,15 @@ export class AutoSkillExtractor implements BrainProvider {
   }
 
   private async tryExtract(input: string, output: string): Promise<void> {
-    const minLen = this.opts.minReplyChars ?? 40;
+    const minOut = this.opts.minReplyChars ?? 60;
+    const minIn = this.opts.minInputChars ?? 20;
     const maxIn = this.opts.maxInputChars ?? 1000;
-    if (!output || output.length < minLen) return;
+    if (!input || input.trim().length < minIn) return;
+    if (!output || output.length < minOut) return;
     if (/\b(error|undefined|null|sorry, i can't)\b/i.test(output) && output.length < 200) return;
+    // Skip purely conversational replies (greetings, acks).
+    if (/^(?:hi|hello|hey|ok|okay|sure|thanks|thank you|got it)\b[\s.!,?]*$/i.test(output.trim())) return;
     const trimmedInput = input.length > maxIn ? input.slice(0, maxIn) : input;
-    // Derive a stable slug from the first 6 input words to dedupe similar requests.
     const name = trimmedInput.split(/\s+/).slice(0, 6).join(' ').replace(/[^A-Za-z0-9 _-]/g, '').trim();
     if (!name) return;
     await this.library.extract({

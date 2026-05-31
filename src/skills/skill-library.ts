@@ -51,8 +51,28 @@ export interface SkillSearchResult {
   score: number;
 }
 
+export interface SkillPruneOptions {
+  /** Skills with `successCount` strictly below this are eligible for pruning. Default 2. */
+  minSuccessCount?: number;
+  /** Skills whose `lastUsed` is older than this many ms are eligible. Default 30 days. */
+  maxAgeMs?: number;
+  /** Dry-run — return what would be pruned without deleting. */
+  dryRun?: boolean;
+}
+
+export interface SkillPruneResult {
+  pruned: string[];
+  kept: number;
+  dryRun: boolean;
+}
+
 export class SkillLibrary {
+  /** In-memory slug cache. Invalidated on extract/write/remove. */
+  private slugCache: string[] | null = null;
+
   constructor(private readonly dir: string) {}
+
+  private invalidate(): void { this.slugCache = null; }
 
   /** Extract a skill from a (input, output, success) triple. The skill is
    *  only persisted when `success === true`; otherwise this is a no-op. */
@@ -114,15 +134,19 @@ export class SkillLibrary {
     if (Buffer.byteLength(body, 'utf8') > 512 * 1024) throw new Error(`skill ${skill.slug}: too large`);
     await fs.writeFile(tmp, body, 'utf8');
     await fs.rename(tmp, file);
+    this.invalidate();
     return { bytes: Buffer.byteLength(body, 'utf8') };
   }
 
   /** List all skills (slug only, cheap). */
   async listSlugs(): Promise<string[]> {
+    if (this.slugCache) return [...this.slugCache];
     try {
       const entries = await fs.readdir(this.dir);
-      return entries.filter((e) => e.endsWith('.md')).map((e) => e.slice(0, -3)).sort();
-    } catch { return []; }
+      const slugs = entries.filter((e) => e.endsWith('.md')).map((e) => e.slice(0, -3)).sort();
+      this.slugCache = slugs;
+      return [...slugs];
+    } catch { this.slugCache = []; return []; }
   }
 
   /** Load all skills (slow path; for small libraries only). */
@@ -165,8 +189,35 @@ export class SkillLibrary {
   /** Remove a skill. Returns true if a file was deleted. */
   async remove(slug: string): Promise<boolean> {
     const safe = slugify(slug);
-    try { await fs.unlink(path.join(this.dir, `${safe}.md`)); return true; }
+    try { await fs.unlink(path.join(this.dir, `${safe}.md`)); this.invalidate(); return true; }
     catch { return false; }
+  }
+
+  /**
+   * Prune low-value skills. Default policy: delete skills with
+   * `successCount < 2` AND `lastUsed > 30 days ago`. Both conditions must
+   * hold, so a 1-shot skill from yesterday survives but a 1-shot from
+   * last month doesn't.
+   */
+  async prune(opts: SkillPruneOptions = {}): Promise<SkillPruneResult> {
+    const minSuccess = opts.minSuccessCount ?? 2;
+    const maxAge = opts.maxAgeMs ?? 30 * 24 * 60 * 60 * 1000;
+    const dryRun = opts.dryRun === true;
+    const cutoff = Date.now() - maxAge;
+    const skills = await this.listAll();
+    const pruned: string[] = [];
+    let kept = 0;
+    for (const s of skills) {
+      const stale = s.lastUsed ? new Date(s.lastUsed).getTime() < cutoff : true;
+      const low = s.successCount < minSuccess;
+      if (low && stale) {
+        pruned.push(s.slug);
+        if (!dryRun) await this.remove(s.slug);
+      } else {
+        kept += 1;
+      }
+    }
+    return { pruned, kept, dryRun };
   }
 
   /** Total number of skills in the library. */

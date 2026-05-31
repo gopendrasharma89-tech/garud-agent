@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.7.0] — 2026-05-24 — "Altocumulus"
+
+Security & hygiene release: workspace download is now **gated by signed URLs**, agents.md drives **persona routing**, and the skill library has a real **pruning policy** so a long-running agent doesn't accumulate one-shot junk forever.
+
+### 🐛 Bug fixes
+- `verifyUrlToken()` returned `{ ok: false }` without a reason when the MAC didn't match. Now correctly surfaces `reason: 'mismatch'`.
+- `AutoSkillExtractor` extracted on *every* non-trivial reply, including 3-character greetings and `Thanks!` responses. New v3.7 floor: input ≥ 20 chars, reply ≥ 60 chars, and conversational replies are explicitly rejected.
+- `AGENTS.md` was parsed but personas were not exposed through any API. Now reachable via `GET /agents`, `GET /agents/<slug>`, and via the `agents.list` / `agents.find` tools.
+- `SkillLibrary.listSlugs()` did a full directory scan on every call. New in-memory slug cache, invalidated on `write`/`remove`/`extract`.
+
+### 🔐 Signed URLs
+- `src/auth/signed-url.ts` — `signUrlToken(secret, path, exp)` and `verifyUrlToken()` using constant-time HMAC-SHA256. Token format: `<hex-mac>.<exp-unix-seconds>`.
+- `GET /workspace.tgz` now requires `?token=` when `GARUD_WORKSPACE_SIGN_SECRET` is set (closes a real data-leak hole — anyone with the URL could pull the workspace).
+- `POST /workspace.tgz/sign` mints a short-lived signed URL. TTL clamped to `[30, 3600]` seconds.
+
+### 🎭 AGENTS.md persona routing
+- `src/workspace/agents-parser.ts` — parses the existing AGENTS.md format into structured `AgentPersona[]` with `{slug, persona, tools, trustDefault, notes}`.
+- `findPersona(personas, slug)` falls back to `default` when the requested persona is missing.
+- Invalid trust levels (e.g. `superuser`) are silently rejected.
+
+### 🧹 Skill pruning
+- `SkillLibrary.prune({ minSuccessCount, maxAgeMs, dryRun })` — default policy: delete skills where `successCount < 2` AND `lastUsed > 30 days ago`. Both must hold, so a 1-shot from yesterday survives but a 1-shot from last month doesn't.
+- `dryRun: true` reports what would be deleted without touching disk.
+
+### ✨ New built-in tools (+3 → 165 total)
+`agents.list` · `agents.find` · `skills.prune`
+
+### 🌐 New HTTP endpoints (+5)
+- `GET /agents` · `GET /agents/<slug>`
+- `POST /workspace.tgz/sign`
+- `POST /skills/prune`
+- (Existing `GET /workspace.tgz` now gated by signed URL when secret set)
+
+### 🔑 New env var
+- `GARUD_WORKSPACE_SIGN_SECRET` — enables signed-URL gating on `/workspace.tgz`
+
+### 📊 Stats
+- **659 tests pass** across 56 suites in ~22 s (+22 over v3.6)
+- **73 source files**, **56 test files**, **19,660 LoC**
+- 165 built-in tools, ~77 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.6.0] — 2026-05-23 — "Nimbus"
 
 The v3.5 release added Hermes-style **structure**; v3.6 makes it **actually do something**: skills are auto-extracted from successful agent replies, HEARTBEAT.md rules fire on real timers, and the CLI `doctor` matches the HTTP report.
