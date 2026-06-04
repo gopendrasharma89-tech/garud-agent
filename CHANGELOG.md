@@ -1,5 +1,54 @@
 # Changelog
 
+## [3.8.0] — 2026-05-25 — "Nimbostratus"
+
+**Architectural jump.** Garud was a closed system that only its own brain could drive. v3.8 opens it to the entire MCP ecosystem, gives it a real streaming surface, and \u2014 with the right opt-in env vars \u2014 lets it actually touch the host system and a browser.
+
+### 🌐 MCP (Model Context Protocol) — full bidirectional support
+- **Client** (`src/mcp/mcp-client.ts`) — spawn any stdio MCP server (file system, GitHub, Slack, custom Python tools, anything), and call its tools from Garud. JSON-RPC 2.0 framing, line-delimited, with request timeouts and clean shutdown.
+- **Server** (`src/mcp/mcp-server.ts`) — `garud mcp` runs Garud as an MCP server over stdio so Claude Desktop, Cursor, ChatGPT, Gemini CLI, agent-framework — anything speaking MCP — can discover and call Garud's tools as if they were its own.
+- Curated safe tool surface by default (`memory.*`, `longterm.*`, `daily.*`, `skills.*`, `embeddings.*`, `web.fetch`, `text.*`, `math.*`, `time.*`, `identity.*`, `agents.*`). Set `GARUD_MCP_EXPOSE_ALL=1` to expose every tool.
+- HTTP management: `GET/POST/DELETE /mcp/clients`, `POST /mcp/clients/<id>/call`.
+
+### 🌊 SSE chat streaming
+- `src/streaming/sse.ts` — minimal Server-Sent Events writer with 15s keepalive.
+- `POST /chat/stream` — body `{input, sessionId?, channel?}` returns `event: token` + `event: done` frames. Chat UIs feel like ChatGPT now.
+- Even without a streaming-native brain, the final reply is chunked by word so the client experience is the same.
+
+### 🖥️ System-access tool pack (opt-in)
+`src/system/system-tools.ts` — six tools, **default-DENY**. Enable with `GARUD_SYSTEM_ACCESS=1`; further restrict with allowlists.
+- `system.info` — platform/arch/cwd/memory
+- `fs.read` / `fs.write` / `fs.list` — gated by `GARUD_FS_ALLOW=/path1:/path2`
+- `shell.exec` — gated by `GARUD_EXEC_ALLOW=git:ls:echo` (allowlist first token of the command)
+- `env.read` — env vars with `TOKEN|SECRET|KEY|PASSWORD` automatically masked to `***`
+
+### 🌐 Browser-control tool pack (opt-in)
+`src/browser/browser-tools.ts` — shells out to a chromium-compatible binary (`GARUD_BROWSER_BIN`, default `chromium`). Default-DENY; enable with `GARUD_BROWSER=1`.
+- `browser.fetch` — JS-rendered DOM dump for a URL
+- `browser.screenshot` — PNG screenshot at a given resolution
+- `browser.info` — binary version probe
+
+### 🔑 New env vars
+- `GARUD_MCP_EXPOSE_ALL` — MCP server exposes every tool (default: curated subset)
+- `GARUD_SYSTEM_ACCESS` — enables `system.*`, `fs.*`, `shell.exec`, `env.read`
+- `GARUD_FS_ALLOW` — colon-separated directories the fs tools can touch
+- `GARUD_EXEC_ALLOW` — colon-separated command names `shell.exec` can run
+- `GARUD_BROWSER` — enables browser tools
+- `GARUD_BROWSER_BIN` — override the chromium binary (e.g. `/usr/bin/google-chrome`)
+
+### 🌐 New HTTP endpoints (+5)
+- `POST /chat/stream` (SSE)
+- `GET /mcp/clients`, `POST /mcp/clients`, `DELETE /mcp/clients/<id>`, `POST /mcp/clients/<id>/call`
+
+### 🆕 New CLI command
+- `garud mcp` — run as MCP server over stdio
+
+### 📊 Stats
+- **668 tests pass** across 57 suites in ~22 s (+9 v3.8 including a real MCP client/server round-trip)
+- **78 source files**, **57 test files**, **20,586 LoC**
+- 165 base built-in tools + 6 system + 3 browser = 174 tools when env enabled
+- ~82 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.7.0] — 2026-05-24 — "Altocumulus"
 
 Security & hygiene release: workspace download is now **gated by signed URLs**, agents.md drives **persona routing**, and the skill library has a real **pruning policy** so a long-running agent doesn't accumulate one-shot junk forever.

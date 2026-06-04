@@ -12,9 +12,9 @@ import os from 'node:os';
 
 describe('v3.3 Cirrus subsystems', () => {
   it('version constants are 3.3.0 Cirrus', () => {
-    expect(GARUD_VERSION).toBe('3.7.0');
-    expect(GARUD_BUILD.codename).toBe('Altocumulus');
-    expect(GARUD_BUILD.releasedAt).toBe('2026-05-24');
+    expect(GARUD_VERSION).toBe('3.8.0');
+    expect(GARUD_BUILD.codename).toBe('Nimbostratus');
+    expect(GARUD_BUILD.releasedAt).toBe('2026-05-25');
   });
 
   it('EmbeddingStore.all() returns snapshot of indexed docs', async () => {

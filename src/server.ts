@@ -52,6 +52,8 @@ export interface ServerDeps {
    * When unset the endpoint accepts unauthenticated GETs (backwards-compatible).
    */
   workspaceSignSecret?: string;
+  /** Optional MCP client registry (lets the brain reach outbound MCP servers). */
+  mcpClients?: Map<string, import('./mcp/mcp-client.js').McpClient>;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -642,6 +644,73 @@ export function createServer(deps: ServerDeps): http.Server {
         const persona = findPersona(personas, personaMatch[1]!);
         if (!persona) return send(res, 404, { ok: false, error: 'persona not found' });
         return send(res, 200, { ok: true, persona });
+      }
+
+      // v3.8: SSE chat streaming. Body: {input, sessionId?}. Stream: token, done.
+      if (req.method === 'POST' && url.pathname === '/chat/stream') {
+        try {
+          const { payload } = await readJson<{ input?: string; sessionId?: string; channel?: string }>(req, 64 * 1024);
+          if (!payload.input || typeof payload.input !== 'string') return send(res, 400, { ok: false, error: 'input required' });
+          const { openSse, pipeToSse } = await import('./streaming/sse.js');
+          const writer = openSse(res, { requestId });
+          const detail = await gateway.handleDetailed({
+            text: payload.input,
+            channel: payload.channel ?? 'http-sse',
+            userId: payload.sessionId ?? `sse-user-${Date.now()}`,
+            requestId
+          });
+          // No real streaming brain wired yet — chunk the final reply by words
+          // so the client sees the same UX as a token-by-token stream.
+          const text = detail.reply?.text ?? '';
+          async function* chunks(): AsyncGenerator<string> {
+            const parts = text.split(/(\s+)/);
+            for (const p of parts) { if (p.length) yield p; }
+          }
+          await pipeToSse(writer, chunks(), { requestId });
+          return;
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v3.8: MCP client management endpoints
+      if (req.method === 'GET' && url.pathname === '/mcp/clients') {
+        const list = [...(deps.mcpClients ?? new Map()).entries()].map(([id, c]) => ({ id, ...c.info() }));
+        return send(res, 200, { ok: true, clients: list });
+      }
+      if (req.method === 'POST' && url.pathname === '/mcp/clients') {
+        if (!deps.mcpClients) return send(res, 503, { ok: false, error: 'mcp clients registry not configured' });
+        try {
+          const { payload } = await readJson<{ id?: string; command?: string; args?: string[]; env?: Record<string, string> }>(req);
+          if (!payload.id || !payload.command) return send(res, 400, { ok: false, error: 'id and command required' });
+          const { McpClient } = await import('./mcp/mcp-client.js');
+          const client = new McpClient({ command: payload.command, args: payload.args ?? [], env: payload.env ?? {} });
+          await client.start();
+          deps.mcpClients.set(payload.id, client);
+          const tools = await client.listTools();
+          return send(res, 200, { ok: true, id: payload.id, tools });
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+      const mcpDelMatch = req.method === 'DELETE' && /^\/mcp\/clients\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (mcpDelMatch) {
+        if (!deps.mcpClients) return send(res, 503, { ok: false, error: 'mcp clients registry not configured' });
+        const id = mcpDelMatch[1]!;
+        const client = deps.mcpClients.get(id);
+        if (!client) return send(res, 404, { ok: false, error: 'unknown mcp client' });
+        await client.stop();
+        deps.mcpClients.delete(id);
+        return send(res, 200, { ok: true });
+      }
+      const mcpCallMatch = req.method === 'POST' && /^\/mcp\/clients\/([A-Za-z0-9_-]+)\/call$/.exec(url.pathname);
+      if (mcpCallMatch) {
+        if (!deps.mcpClients) return send(res, 503, { ok: false, error: 'mcp clients registry not configured' });
+        const id = mcpCallMatch[1]!;
+        const client = deps.mcpClients.get(id);
+        if (!client) return send(res, 404, { ok: false, error: 'unknown mcp client' });
+        try {
+          const { payload } = await readJson<{ tool?: string; arguments?: Record<string, unknown> }>(req);
+          if (!payload.tool) return send(res, 400, { ok: false, error: 'tool required' });
+          const r = await client.callTool(payload.tool, payload.arguments ?? {});
+          return send(res, 200, { ok: !r.isError, result: r });
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
       }
 
       // v3.7: skills prune

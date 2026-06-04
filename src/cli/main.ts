@@ -329,6 +329,20 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'mcp': {
+      // Run as an MCP server over stdio so clients (Claude Desktop, Cursor, etc.)
+      // can discover Garud's tools. The handshake completes when the client
+      // sends `initialize`. Use Ctrl-D or SIGTERM to exit.
+      const { McpServer } = await import('../mcp/mcp-server.js');
+      const server = new McpServer({
+        tools,
+        exposeAll: process.env.GARUD_MCP_EXPOSE_ALL === '1'
+      });
+      // No stdout noise — stdio is the MCP transport.
+      await server.listen();
+      break;
+    }
+
     case 'doctor': {
       // v3.6: use the structured runDoctor() report so CLI and HTTP agree.
       const { runDoctor } = await import('../doctor/doctor.js');

@@ -37,6 +37,8 @@ import { MemoryIndex } from './memory/memory-index.js';
 import { SkillLibrary } from './skills/skill-library.js';
 import { AutoSkillExtractor } from './skills/auto-skill-extractor.js';
 import { HeartbeatScheduler } from './heartbeat/heartbeat-scheduler.js';
+import { buildSystemTools } from './system/system-tools.js';
+import { buildBrowserTools } from './browser/browser-tools.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -75,6 +77,7 @@ export interface BootstrapResult {
   memoryIndex: MemoryIndex;
   skillLibrary: SkillLibrary;
   heartbeatScheduler: HeartbeatScheduler;
+  mcpClients: Map<string, import('./mcp/mcp-client.js').McpClient>;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -142,6 +145,22 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     memoryIndex,
     skillLibrary
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
+
+  // v3.8: env-gated system + browser tool packs. Both default-DENY — nothing
+  // dangerous happens unless the operator opts in by setting env vars.
+  const sysAccess = process.env.GARUD_SYSTEM_ACCESS === '1' || process.env.GARUD_SYSTEM_ACCESS === 'true';
+  const systemTools = buildSystemTools({
+    enabled: sysAccess,
+    fsAllow: (process.env.GARUD_FS_ALLOW ?? '').split(':').filter(Boolean),
+    execAllow: (process.env.GARUD_EXEC_ALLOW ?? '').split(':').filter(Boolean)
+  });
+  for (const t of systemTools) try { tools.register(t); } catch { /* duplicate */ }
+  const browserOn = process.env.GARUD_BROWSER === '1' || process.env.GARUD_BROWSER === 'true';
+  const browserTools = buildBrowserTools({
+    enabled: browserOn,
+    ...(process.env.GARUD_BROWSER_BIN ? { binary: process.env.GARUD_BROWSER_BIN } : {})
+  });
+  for (const t of browserTools) try { tools.register(t); } catch { /* duplicate */ }
 
   if (config.plugins?.length) {
     const loader = new PluginLoader(memories, logger.child('plugins'));
@@ -357,7 +376,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     inMemoryChannel, consoleChannel, broadcastChannel, store, skills, scheduler, logger,
     longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat,
     embeddings, costTracker, tracer,
-    memoryIndex, skillLibrary, heartbeatScheduler
+    memoryIndex, skillLibrary, heartbeatScheduler,
+    mcpClients: new Map()
   };
 }
 
