@@ -39,6 +39,8 @@ import { AutoSkillExtractor } from './skills/auto-skill-extractor.js';
 import { HeartbeatScheduler } from './heartbeat/heartbeat-scheduler.js';
 import { buildSystemTools } from './system/system-tools.js';
 import { buildBrowserTools } from './browser/browser-tools.js';
+import { BM25Index } from './retrieval/bm25-index.js';
+import { HybridRetriever } from './retrieval/hybrid-retriever.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -78,6 +80,8 @@ export interface BootstrapResult {
   skillLibrary: SkillLibrary;
   heartbeatScheduler: HeartbeatScheduler;
   mcpClients: Map<string, import('./mcp/mcp-client.js').McpClient>;
+  bm25: BM25Index;
+  hybrid: HybridRetriever;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -119,6 +123,10 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   // v3.6: HEARTBEAT.md → timers. Rules are wired below once `subagent` and
   // `dailyLog` exist; the scheduler itself can be created up-front.
   const heartbeatScheduler = new HeartbeatScheduler();
+  // v3.9: hybrid retrieval (BM25 + vector via RRF). Re-index existing embeddings.
+  const bm25 = new BM25Index();
+  for (const doc of embeddings.all()) bm25.add({ id: doc.id, text: doc.text, meta: doc.meta });
+  const hybrid = new HybridRetriever(bm25, embeddings);
 
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
@@ -143,7 +151,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     reflector,
     planner,
     memoryIndex,
-    skillLibrary
+    skillLibrary,
+    hybrid
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
   // v3.8: env-gated system + browser tool packs. Both default-DENY — nothing
@@ -377,7 +386,8 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     longterm, dailyLog, subagent, nodes, hooks, compactor, workspace, heartbeat,
     embeddings, costTracker, tracer,
     memoryIndex, skillLibrary, heartbeatScheduler,
-    mcpClients: new Map()
+    mcpClients: new Map(),
+    bm25, hybrid
   };
 }
 

@@ -54,6 +54,7 @@ export interface ServerDeps {
   workspaceSignSecret?: string;
   /** Optional MCP client registry (lets the brain reach outbound MCP servers). */
   mcpClients?: Map<string, import('./mcp/mcp-client.js').McpClient>;
+  hybrid?: import('./retrieval/hybrid-retriever.js').HybridRetriever;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -710,6 +711,57 @@ export function createServer(deps: ServerDeps): http.Server {
           if (!payload.tool) return send(res, 400, { ok: false, error: 'tool required' });
           const r = await client.callTool(payload.tool, payload.arguments ?? {});
           return send(res, 200, { ok: !r.isError, result: r });
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v3.9: hybrid retrieval (BM25 + vector RRF)
+      if (req.method === 'POST' && url.pathname === '/retrieval/add') {
+        if (!deps.hybrid) return send(res, 503, { ok: false, error: 'hybrid retriever not configured' });
+        try {
+          const { payload } = await readJson<{ id?: string; text?: string; meta?: Record<string, unknown> }>(req, 256 * 1024);
+          if (!payload.id || !payload.text) return send(res, 400, { ok: false, error: 'id and text required' });
+          const doc: { id: string; text: string; meta?: Record<string, unknown> } = { id: payload.id, text: payload.text };
+          if (payload.meta !== undefined) doc.meta = payload.meta;
+          await deps.hybrid.add(doc);
+          return send(res, 200, { ok: true, size: deps.hybrid.size() });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+      if (req.method === 'POST' && url.pathname === '/retrieval/search') {
+        if (!deps.hybrid) return send(res, 503, { ok: false, error: 'hybrid retriever not configured' });
+        try {
+          const { payload } = await readJson<{ query?: string; k?: number; bm25Weight?: number; vectorWeight?: number }>(req);
+          if (!payload.query) return send(res, 400, { ok: false, error: 'query required' });
+          const k = Math.max(1, Math.min(50, payload.k ?? 5));
+          const opts: { bm25Weight?: number; vectorWeight?: number } = {};
+          if (payload.bm25Weight !== undefined) opts.bm25Weight = payload.bm25Weight;
+          if (payload.vectorWeight !== undefined) opts.vectorWeight = payload.vectorWeight;
+          const results = await deps.hybrid.search(payload.query, k, opts);
+          return send(res, 200, { ok: true, results });
+        } catch (e) { return send(res, 400, { ok: false, error: (e as Error).message }); }
+      }
+      if (req.method === 'GET' && url.pathname === '/retrieval/size') {
+        if (!deps.hybrid) return send(res, 503, { ok: false, error: 'hybrid retriever not configured' });
+        return send(res, 200, { ok: true, size: deps.hybrid.size() });
+      }
+      // v3.9: eval harness
+      if (req.method === 'POST' && url.pathname === '/eval/run') {
+        try {
+          const { payload } = await readJson<{ cases?: import('./eval/eval-harness.js').EvalCase[] }>(req, 1024 * 1024);
+          if (!Array.isArray(payload.cases) || payload.cases.length === 0) return send(res, 400, { ok: false, error: 'cases[] required' });
+          const { EvalHarness } = await import('./eval/eval-harness.js');
+          const harness = new EvalHarness({
+            run: async (c: import('./eval/eval-harness.js').EvalCase) => {
+              const detail = await gateway.handleDetailed({
+                text: c.input,
+                channel: c.channel ?? 'eval',
+                userId: c.userId ?? 'eval-runner',
+                requestId
+              });
+              return { text: detail.reply?.text ?? '', toolsUsed: detail.reply?.usedTools ?? [] };
+            }
+          });
+          const report = await harness.runSuite(payload.cases);
+          return send(res, 200, { ok: true, report });
         } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
       }
 

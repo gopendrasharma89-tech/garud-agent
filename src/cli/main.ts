@@ -329,6 +329,44 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'eval': {
+      // garud eval run <suite.json> — deterministic eval harness.
+      const sub = args.positional[0];
+      if (sub !== 'run') { process.stdout.write('usage: garud eval run <suite.json>\n'); break; }
+      const suitePath = args.positional[1];
+      if (!suitePath) { process.stdout.write('error: suite path required\n'); process.exit(1); }
+      const fs = await import('node:fs/promises');
+      const raw = await fs.readFile(suitePath, 'utf8');
+      let cases: Array<import('../eval/eval-harness.js').EvalCase>;
+      try { cases = JSON.parse(raw); }
+      catch (e) { process.stdout.write(`error: invalid JSON: ${(e as Error).message}\n`); process.exit(1); }
+      if (!Array.isArray(cases)) { process.stdout.write('error: suite must be an array of cases\n'); process.exit(1); }
+      const { EvalHarness } = await import('../eval/eval-harness.js');
+      const harness = new EvalHarness({
+        run: async (c: import('../eval/eval-harness.js').EvalCase) => {
+          const detail = await gateway.handleDetailed({
+            text: c.input,
+            channel: c.channel ?? 'eval',
+            userId: c.userId ?? 'eval-runner'
+          });
+          return { text: detail.reply?.text ?? '', toolsUsed: detail.reply?.usedTools ?? [] };
+        }
+      });
+      const report = await harness.runSuite(cases);
+      if (args.flags.json === 'true' || args.flags.json === '1') {
+        process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+      } else {
+        for (const c of report.cases) {
+          const tag = c.passed ? '\x1b[32m[PASS]\x1b[0m' : '\x1b[31m[FAIL]\x1b[0m';
+          process.stdout.write(`${tag} ${c.id} (${c.durationMs}ms)\n`);
+          for (const f of c.failures) process.stdout.write(`   → ${f}\n`);
+        }
+        process.stdout.write(`\nsummary: ${report.passed}/${report.total} passed (${(report.passRate * 100).toFixed(1)}%), mean ${report.meanLatencyMs}ms, p95 ${report.p95LatencyMs}ms\n`);
+      }
+      if (report.failed > 0) process.exit(1);
+      break;
+    }
+
     case 'mcp': {
       // Run as an MCP server over stdio so clients (Claude Desktop, Cursor, etc.)
       // can discover Garud's tools. The handshake completes when the client

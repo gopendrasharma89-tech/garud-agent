@@ -1,5 +1,39 @@
 # Changelog
 
+## [3.9.0] — 2026-05-26 — "Cirrostratus"
+
+The **quality layer.** v3.8 opened Garud to the world; v3.9 measures whether it gets answers right and retrieves the right context.
+
+### 🐛 Bug fixes
+- v3.8 shipped with stale version pins in test files (3.8.0 → expected, but the version constant had already drifted forward in some sessions). All test version strings now resync to `3.9.0` / `Cirrostratus` / `2026-05-26`.
+- A duplicate `src/embeddings/bm25-index.ts` from a parallel work-stream collided with `src/retrieval/bm25-index.ts`. The retrieval/ implementation wins (already used by `HybridRetriever`); the embeddings duplicate is removed.
+- Eval-harness callers in `src/cli/main.ts` and `src/server.ts` had `c` implicitly typed `any`. Now strict-typed against `EvalCase`.
+
+### 🔎 Hybrid RAG
+- `src/retrieval/bm25-index.ts` — full Okapi BM25 (k1=1.5, b=0.75), in-memory, zero-dep.
+- `src/retrieval/hybrid-retriever.ts` — combines BM25 + the existing TF-IDF `EmbeddingStore` via **Reciprocal Rank Fusion** (k=60). RRF needs no per-system score normalisation — only ranks.
+- Auto-indexed on boot from the persisted embedding store.
+- HTTP: `POST /retrieval/add`, `POST /retrieval/search`, `GET /retrieval/size`.
+
+### 🧪 Eval Harness
+- `src/eval/eval-harness.ts` — `EvalHarness` class with a caller-supplied `run()` function (typically the gateway brain).
+- Deterministic metrics only — no LLM judge required:
+  - substring / regex match
+  - JSON-field equality (`expect.jsonField`)
+  - tools-used assertions (`expect.toolsUsed`)
+  - per-case latency, suite mean / p50 / p95 / p99
+- Each case has its own 30s timeout (configurable).
+- `garud eval <suite.json> --json=true` for machine output.
+
+### 🌐 HTTP endpoints (already wired)
+- `POST /retrieval/add` · `POST /retrieval/search` · `GET /retrieval/size`
+- `POST /eval/run` — body `{cases: EvalCase[]}` returns the full `EvalSuiteResult`
+
+### 📊 Stats
+- **679 tests pass** across 58 suites in ~22 s (+11 v3.9)
+- **81 source files**, **58 test files**, **21,252 LoC**
+- ~85 HTTP endpoints, zero runtime dependencies, strict TS
+
 ## [3.8.0] — 2026-05-25 — "Nimbostratus"
 
 **Architectural jump.** Garud was a closed system that only its own brain could drive. v3.8 opens it to the entire MCP ecosystem, gives it a real streaming surface, and \u2014 with the right opt-in env vars \u2014 lets it actually touch the host system and a browser.

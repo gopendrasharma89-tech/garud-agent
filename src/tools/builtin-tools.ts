@@ -27,6 +27,7 @@ export interface BuiltinToolDeps {
   planner?: import('../planning/planner.js').HeuristicPlanner;
   memoryIndex?: import('../memory/memory-index.js').MemoryIndex;
   skillLibrary?: import('../skills/skill-library.js').SkillLibrary;
+  hybrid?: import('../retrieval/hybrid-retriever.js').HybridRetriever;
 }
 
 export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
@@ -2356,6 +2357,45 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       execute: async () => {
         if (!deps.workspace) return { content: 'identity.read: not enabled', error: true };
         return { content: await deps.workspace.readIdentity() };
+      }
+    },
+    {
+      name: 'retrieval.add',
+      description: 'Add a document to the hybrid (BM25+vector) index. Input: JSON {id, text, meta?}.',
+      execute: async (input) => {
+        if (!deps.hybrid) return { content: 'retrieval.add: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { id: string; text: string; meta?: Record<string, unknown> };
+          if (!p.id || !p.text) return { content: 'retrieval.add: id and text required', error: true };
+          const doc: { id: string; text: string; meta?: Record<string, unknown> } = { id: p.id, text: p.text };
+          if (p.meta !== undefined) doc.meta = p.meta;
+          await deps.hybrid.add(doc);
+          return { content: JSON.stringify({ ok: true, size: deps.hybrid.size() }) };
+        } catch (e) { return { content: `retrieval.add: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'retrieval.search',
+      description: 'Hybrid (BM25+vector RRF) top-K search. Input: JSON {query, k?, bm25Weight?, vectorWeight?}.',
+      execute: async (input) => {
+        if (!deps.hybrid) return { content: 'retrieval.search: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { query: string; k?: number; bm25Weight?: number; vectorWeight?: number };
+          if (!p.query) return { content: 'retrieval.search: query required', error: true };
+          const opts: { bm25Weight?: number; vectorWeight?: number } = {};
+          if (p.bm25Weight !== undefined) opts.bm25Weight = p.bm25Weight;
+          if (p.vectorWeight !== undefined) opts.vectorWeight = p.vectorWeight;
+          const results = await deps.hybrid.search(p.query, p.k ?? 5, opts);
+          return { content: JSON.stringify({ results }) };
+        } catch (e) { return { content: `retrieval.search: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'retrieval.size',
+      description: 'Return number of documents in the hybrid index.',
+      execute: () => {
+        if (!deps.hybrid) return { content: 'retrieval.size: not enabled', error: true };
+        return { content: JSON.stringify({ size: deps.hybrid.size() }) };
       }
     },
     {

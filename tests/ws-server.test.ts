@@ -176,7 +176,7 @@ describe('WebSocket server', () => {
     const client = await connectWs(harness.port);
     const hello = await client.recv() as { type: string; version: string };
     expect(hello.type).toBe('hello');
-    expect(hello.version).toBe('3.8.0');
+    expect(hello.version).toBe('3.9.0');
     client.close();
   });
 
