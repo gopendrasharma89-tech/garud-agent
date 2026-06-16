@@ -27,6 +27,8 @@ export interface BuiltinToolDeps {
   planner?: import('../planning/planner.js').HeuristicPlanner;
   memoryIndex?: import('../memory/memory-index.js').MemoryIndex;
   skillLibrary?: import('../skills/skill-library.js').SkillLibrary;
+  codeRunner?: import('../sandbox/code-runner.js').CodeRunner;
+  workflows?: import('../workflow/durable-workflow.js').DurableWorkflowRunner;
   hybrid?: import('../retrieval/hybrid-retriever.js').HybridRetriever;
 }
 
@@ -2442,6 +2444,55 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       execute: async () => {
         if (!deps.workspace) return { content: 'heartbeat.rules: not enabled', error: true };
         return { content: JSON.stringify({ rules: await deps.workspace.parseHeartbeatRules() }) };
+      }
+    },
+    {
+      name: 'code.run',
+      description: 'Run JavaScript in a sandboxed Node worker (requires GARUD_CODE_SANDBOX=1). Input: JSON {code, input?, timeoutMs?, memoryMb?}.',
+      execute: async (input) => {
+        if (!deps.codeRunner) return { content: 'code.run: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { code: string; input?: unknown; timeoutMs?: number; memoryMb?: number };
+          if (!p.code) return { content: 'code.run: code required', error: true };
+          const args: import('../sandbox/code-runner.js').CodeRunOptions = { code: p.code };
+          if (p.input !== undefined) args.input = p.input;
+          if (typeof p.timeoutMs === 'number') args.timeoutMs = p.timeoutMs;
+          if (typeof p.memoryMb === 'number') args.memoryMb = p.memoryMb;
+          const r = await deps.codeRunner.run(args);
+          return { content: JSON.stringify(r), ...(r.ok ? {} : { error: true }) };
+        } catch (e) { return { content: `code.run: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'workflow.inspect',
+      description: 'Inspect a durable workflow log. Input: JSON {id}.',
+      execute: async (input) => {
+        if (!deps.workflows) return { content: 'workflow.inspect: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { id: string };
+          if (!p.id) return { content: 'workflow.inspect: id required', error: true };
+          return { content: JSON.stringify(await deps.workflows.inspect(p.id)) };
+        } catch (e) { return { content: `workflow.inspect: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'workflow.list',
+      description: 'List durable workflow ids on disk.',
+      execute: async () => {
+        if (!deps.workflows) return { content: 'workflow.list: not enabled', error: true };
+        return { content: JSON.stringify({ ids: await deps.workflows.list() }) };
+      }
+    },
+    {
+      name: 'workflow.reset',
+      description: 'Delete a workflow log so it starts fresh next run. Input: JSON {id}.',
+      execute: async (input) => {
+        if (!deps.workflows) return { content: 'workflow.reset: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { id: string };
+          if (!p.id) return { content: 'workflow.reset: id required', error: true };
+          return { content: JSON.stringify({ ok: await deps.workflows.reset(p.id) }) };
+        } catch (e) { return { content: `workflow.reset: ${(e as Error).message}`, error: true }; }
       }
     },
     {

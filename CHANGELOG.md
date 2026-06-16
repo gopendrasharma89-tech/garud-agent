@@ -1,5 +1,49 @@
 # Changelog
 
+## [4.0.0] — 2026-05-27 — "Cumulonimbus"
+
+**The runtime layer — Garud crosses into 4.x.**
+
+Across the v3.x series Garud became multi-channel (3.0), OpenClaw-style (3.5), Hermes-style learning (3.6), security-hardened (3.7), MCP-connected (3.8), and quality-measured (3.9). v4.0 closes the loop: the agent can now **actually run code** in an isolated sandbox and **survive crashes** via durable workflows.
+
+### 🐛 Bug fixes
+- v3.9 test version strings (3.9.0 → Cirrostratus → 2026-05-26) resynced to v4.0.
+- `BuiltinToolDeps` was missing slots for `codeRunner` / `workflows`; new tools would not have wired without it. Fixed.
+- `bootstrap()` did not construct or pass the new subsystems through to `createServer()`. Fixed end-to-end.
+
+### 🧪 Sandboxed JavaScript execution
+- `src/sandbox/code-runner.ts` — `CodeRunner.run({code, input?, timeoutMs?, memoryMb?})` spawns user code inside a Node **worker thread** whose payload runs in an isolated `vm.Script` context.
+- **No host access** by design: no `require`, no `import`, no `fs`, no `process`, no `http` — only a curated set of globals (`console`, `Math`, `JSON`, `Buffer`, `Date`, …).
+- **Wall-clock timeout** clamped to `[100, 60_000]` ms (default 5s).
+- **Memory cap** clamped to `[16, 1024]` MiB (default 128).
+- **Code size cap** 256 KiB.
+- Returns `{ ok, result, stdout, stderr, durationMs, error?, timedOut? }`.
+- **Disabled by default** — enable with `GARUD_CODE_SANDBOX=1`.
+
+### 🔁 Durable workflows
+- `src/workflow/durable-workflow.ts` — `DurableWorkflowRunner.run(id, initialState, steps)` runs an ordered list of named steps and appends each step's input/output to `workspace/workflows/<id>.jsonl`.
+- **Resume semantics**: on restart, completed steps are skipped and their outputs replayed into state. A failed step is the resume point — fix the bug, re-run, prior successes don't re-execute.
+- `inspect(id)` returns the event log without running anything.
+- `list()` / `reset(id)` for maintenance.
+- Survives process kills mid-run because every successful step is durable before the next starts.
+
+### ✨ New built-in tools (+4)
+`code.run` · `workflow.inspect` · `workflow.list` · `workflow.reset`
+
+### 🌐 New HTTP endpoints (+4)
+- `POST /code/run` — run JavaScript in the sandbox
+- `GET /workflows` — list workflow ids
+- `GET /workflows/<id>` — inspect a workflow log
+- `DELETE /workflows/<id>` — reset a workflow log
+
+### 🔑 New env var
+- `GARUD_CODE_SANDBOX` — enables `code.run` and `POST /code/run`
+
+### 📊 Stats
+- **692 tests pass** across 59 suites in ~23 s (+13 v4.0 tests including sandbox isolation, wall-clock timeout, and crash-resume behaviour)
+- **83 source files**, **59 test files**, **21,785 LoC**
+- ~89 HTTP endpoints, **zero runtime dependencies, strict TypeScript**
+
 ## [3.9.0] — 2026-05-26 — "Cirrostratus"
 
 The **quality layer.** v3.8 opened Garud to the world; v3.9 measures whether it gets answers right and retrieves the right context.

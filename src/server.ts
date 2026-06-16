@@ -55,6 +55,8 @@ export interface ServerDeps {
   /** Optional MCP client registry (lets the brain reach outbound MCP servers). */
   mcpClients?: Map<string, import('./mcp/mcp-client.js').McpClient>;
   hybrid?: import('./retrieval/hybrid-retriever.js').HybridRetriever;
+  codeRunner?: import('./sandbox/code-runner.js').CodeRunner;
+  workflows?: import('./workflow/durable-workflow.js').DurableWorkflowRunner;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -763,6 +765,38 @@ export function createServer(deps: ServerDeps): http.Server {
           const report = await harness.runSuite(payload.cases);
           return send(res, 200, { ok: true, report });
         } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v4.0: sandboxed code execution
+      if (req.method === 'POST' && url.pathname === '/code/run') {
+        if (!deps.codeRunner) return send(res, 503, { ok: false, error: 'code runner not configured' });
+        try {
+          const { payload } = await readJson<{ code?: string; input?: unknown; timeoutMs?: number; memoryMb?: number }>(req, 512 * 1024);
+          if (!payload.code) return send(res, 400, { ok: false, error: 'code required' });
+          const args: import('./sandbox/code-runner.js').CodeRunOptions = { code: payload.code };
+          if (payload.input !== undefined) args.input = payload.input;
+          if (typeof payload.timeoutMs === 'number') args.timeoutMs = payload.timeoutMs;
+          if (typeof payload.memoryMb === 'number') args.memoryMb = payload.memoryMb;
+          const r = await deps.codeRunner.run(args);
+          return send(res, r.ok ? 200 : 400, { ok: r.ok, result: r });
+        } catch (e) { return send(res, 500, { ok: false, error: (e as Error).message }); }
+      }
+
+      // v4.0: durable workflow inspect/list/reset
+      if (req.method === 'GET' && url.pathname === '/workflows') {
+        if (!deps.workflows) return send(res, 503, { ok: false, error: 'workflows not configured' });
+        return send(res, 200, { ok: true, ids: await deps.workflows.list() });
+      }
+      const wfInspect = req.method === 'GET' && /^\/workflows\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (wfInspect) {
+        if (!deps.workflows) return send(res, 503, { ok: false, error: 'workflows not configured' });
+        return send(res, 200, { ok: true, ...(await deps.workflows.inspect(wfInspect[1]!)) });
+      }
+      const wfReset = req.method === 'DELETE' && /^\/workflows\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (wfReset) {
+        if (!deps.workflows) return send(res, 503, { ok: false, error: 'workflows not configured' });
+        const ok = await deps.workflows.reset(wfReset[1]!);
+        return send(res, ok ? 200 : 404, { ok });
       }
 
       // v3.7: skills prune

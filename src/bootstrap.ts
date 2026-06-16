@@ -41,6 +41,8 @@ import { buildSystemTools } from './system/system-tools.js';
 import { buildBrowserTools } from './browser/browser-tools.js';
 import { BM25Index } from './retrieval/bm25-index.js';
 import { HybridRetriever } from './retrieval/hybrid-retriever.js';
+import { CodeRunner } from './sandbox/code-runner.js';
+import { DurableWorkflowRunner } from './workflow/durable-workflow.js';
 import path from 'node:path';
 import { JsonFileStore } from './storage/json-store.js';
 import { buildBuiltinTools } from './tools/builtin-tools.js';
@@ -82,6 +84,8 @@ export interface BootstrapResult {
   mcpClients: Map<string, import('./mcp/mcp-client.js').McpClient>;
   bm25: BM25Index;
   hybrid: HybridRetriever;
+  codeRunner: CodeRunner;
+  workflows: DurableWorkflowRunner;
 }
 
 export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
@@ -127,6 +131,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   const bm25 = new BM25Index();
   for (const doc of embeddings.all()) bm25.add({ id: doc.id, text: doc.text, meta: doc.meta });
   const hybrid = new HybridRetriever(bm25, embeddings);
+  // v4.0: opt-in JS code sandbox + durable workflow runner
+  const codeRunner = new CodeRunner({ enabled: process.env.GARUD_CODE_SANDBOX === '1' });
+  const workflows = new DurableWorkflowRunner(path.join(config.storage.workspaceDir, 'workflows'));
 
   const tools = new ToolRegistry();
   // SubAgent + skills are registered after AgentRuntime is constructed below;
@@ -152,7 +159,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     planner,
     memoryIndex,
     skillLibrary,
-    hybrid
+    hybrid,
+    codeRunner,
+    workflows
   } as Parameters<typeof buildBuiltinTools>[0])) tools.register(tool);
 
   // v3.8: env-gated system + browser tool packs. Both default-DENY — nothing
@@ -387,7 +396,7 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     embeddings, costTracker, tracer,
     memoryIndex, skillLibrary, heartbeatScheduler,
     mcpClients: new Map(),
-    bm25, hybrid
+    bm25, hybrid, codeRunner, workflows
   };
 }
 
