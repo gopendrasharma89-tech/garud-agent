@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.1.0] — 2026-06-28 — "Altostratus"
+
+**Reliability + four new tools.**
+
+### 🐛 Bug fixes
+- The MCP client↔server roundtrip tests in `tests/v38-features.test.ts` spawned a subprocess that imported the compiled `dist/mcp/mcp-server.js`. Running `npm test` without a prior `npm run build` made the subprocess exit immediately (`mcp server exited`) and the two tests failed. The tests now run the server straight from the TypeScript source via `tsx`, so they pass with or without a build.
+
+### 🛠️ New built-in tools (172 → 176)
+- `json.stringify` — serialize JSON, pretty / minified / custom indent.
+- `text.count` — count non-overlapping occurrences of a substring.
+- `number.format` — thousands separators with optional fixed decimals.
+- `text.mask` — redact sensitive strings, revealing only the last N characters.
+
+### 🧹 Housekeeping
+- Removed duplicate `license` / `keywords` keys from `package.json`.
+
 ## [4.0.0] — 2026-05-27 — "Cumulonimbus"
 
 **The runtime layer — Garud crosses into 4.x.**

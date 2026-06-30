@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![Tools](https://img.shields.io/badge/tools-140-purple)]()
+[![Tools](https://img.shields.io/badge/tools-176-purple)]()
 [![Deps](https://img.shields.io/badge/runtime%20deps-0-success)]()
 
 ```
@@ -19,7 +19,7 @@
             GARUD
 ```
 
-**Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **140 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
+**Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **176 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
 > **Version:** 4.0.0 "Cumulonimbus" · Released 2026-05-27
 
@@ -53,7 +53,7 @@ The heartbeat subsystem performs periodic self-checks (default 60s) emitting `{u
 ## 🚀 Highlights
 
 - 🧠 **Pluggable LLM brain** — deterministic (built-in) or any OpenAI-compatible endpoint
-- 🛠️ **140 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills, soul, user, heartbeat
+- 🛠️ **176 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills, soul, user, heartbeat
 - 🌐 **50+ HTTP endpoints** — REST + Server-Sent Events streaming
 - 🔌 **WebSocket server** with auth, ping/pong, broadcast
 - 🔐 **Signed webhooks** (HMAC-SHA256) with constant-time verification
@@ -79,7 +79,7 @@ CLI:
 npm run cli help            # list commands (shows mascot too)
 npm run cli mascot          # show just the falcon
 npm run cli version         # garud-agent 4.0.0
-npm run cli tools           # list all 165 tools
+npm run cli tools           # list all 176 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL
 ```
@@ -94,7 +94,7 @@ npm run cli repl            # interactive REPL
    Discord                    ▼                       ToolRegistry
                         Sessions · Memory                  │
                         Conversation · Audit               ▼
-                        RateLimit · Quotas         140 built-in tools
+                        RateLimit · Quotas         176 built-in tools
                         Pairing · CircuitBreaker          + plugins
                         Scheduler · Cache                 + skills
                         ───────────────────
@@ -116,7 +116,7 @@ npm run cli repl            # interactive REPL
 | Source files | 83 |
 | Test files | 59 |
 | Lines of TypeScript | 21,785 |
-| Built-in tools | 165 |
+| Built-in tools | 176 |
 | HTTP endpoints | ~89 |
 | Test suites | 59 |
 | Tests | 692 (all passing) |

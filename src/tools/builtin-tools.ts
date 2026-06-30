@@ -2507,6 +2507,79 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
           return { content: JSON.stringify(result) };
         } catch (e) { return { content: `hmac.verify: ${(e as Error).message}`, error: true }; }
       }
-    }
+    },
+    {
+      name: 'json.stringify',
+      description: 'Serialize JSON. Input: "<json>" (pretty, 2-space) or "<json>::min" to minify or "<json>::<indent 0-8>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        const raw = sep === -1 ? input : input.slice(0, sep);
+        const mode = sep === -1 ? '' : input.slice(sep + 2).trim();
+        try {
+          const value = JSON.parse(raw);
+          if (mode === 'min') return { content: JSON.stringify(value) };
+          const indent = mode === '' ? 2 : Math.max(0, Math.min(8, parseInt(mode, 10) || 0));
+          return { content: JSON.stringify(value, null, indent) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `json.stringify error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'text.count',
+      description: 'Count non-overlapping occurrences of a substring. Input: "<needle>::<haystack>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        if (sep === -1) return { content: 'text.count: needs <needle>::<haystack>', error: true };
+        const needle = input.slice(0, sep);
+        const haystack = input.slice(sep + 2);
+        if (!needle) return { content: 'text.count: empty needle', error: true };
+        let count = 0;
+        let i = haystack.indexOf(needle);
+        while (i !== -1) { count++; i = haystack.indexOf(needle, i + needle.length); }
+        return { content: String(count), metadata: { count } };
+      }
+    },
+    {
+      name: 'number.format',
+      description: 'Format a number with thousands separators. Input: "<number>" or "<number>::<decimals 0-20>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        const numPart = (sep === -1 ? input : input.slice(0, sep)).trim();
+        const n = Number(numPart);
+        if (!Number.isFinite(n)) return { content: 'number.format: not a finite number', error: true };
+        const decimals = sep === -1 ? undefined : Math.max(0, Math.min(20, parseInt(input.slice(sep + 2), 10) || 0));
+        const opts: Intl.NumberFormatOptions = decimals === undefined
+          ? {}
+          : { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
+        return { content: new Intl.NumberFormat('en-US', opts).format(n) };
+      }
+    },
+    {
+      name: 'text.mask',
+      description: 'Mask sensitive text, revealing only the last few characters. Input: JSON {value, keep?=4, char?="*"}.',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        try {
+          const p = JSON.parse(input) as { value?: string; keep?: number; char?: string };
+          if (typeof p.value !== 'string') return { content: 'text.mask: value (string) required', error: true };
+          const keep = Math.max(0, Math.min(p.value.length, Number.isFinite(p.keep) ? Number(p.keep) : 4));
+          const ch = (p.char ?? '*').slice(0, 1) || '*';
+          const hidden = ch.repeat(p.value.length - keep);
+          return { content: hidden + p.value.slice(p.value.length - keep) };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `text.mask error: ${msg}`, error: true };
+        }
+      }
+    },
   ];
 }

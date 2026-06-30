@@ -135,9 +135,9 @@ describe('v3.8 Nimbostratus subsystems', () => {
         description: 'fake save',
         execute: (input: string) => ({ content: `saved:${input}` })
       };
-      const serverScript = path.join(tmp, 'server.mjs');
+      const serverScript = path.join(tmp, 'server.mts');
       await fs.writeFile(serverScript, `
-import { McpServer } from '${path.resolve('dist/mcp/mcp-server.js')}';
+import { McpServer } from '${path.resolve('src/mcp/mcp-server.ts').replace(/\\/g, '/')}';
 const tools = {
   list: () => [${JSON.stringify({ name: fakeTool.name, description: fakeTool.description })}],
   get: (n) => n === 'memory.save' ? { name: 'memory.save', execute: (input) => ({ content: 'saved:' + input }) } : undefined,
@@ -147,7 +147,7 @@ const tools = {
 const s = new McpServer({ tools, exposeAll: true });
 await s.listen();
 `);
-      const client = new McpClient({ command: 'node', args: [serverScript], requestTimeoutMs: 5000 });
+      const client = new McpClient({ command: process.execPath, args: ['--import', 'tsx', serverScript], requestTimeoutMs: 5000 });
       const init = await client.start();
       expect(init.capabilities).toBeDefined();
       const tools = await client.listTools();
@@ -161,14 +161,14 @@ await s.listen();
     }, 15_000);
 
     it('client surfaces server errors cleanly', async () => {
-      const serverScript = path.join(tmp, 'err-server.mjs');
+      const serverScript = path.join(tmp, 'err-server.mts');
       await fs.writeFile(serverScript, `
-import { McpServer } from '${path.resolve('dist/mcp/mcp-server.js')}';
+import { McpServer } from '${path.resolve('src/mcp/mcp-server.ts').replace(/\\/g, '/')}';
 const tools = { list: () => [], get: () => undefined, register: () => {}, size: () => 0 };
 const s = new McpServer({ tools, exposeAll: true });
 await s.listen();
 `);
-      const client = new McpClient({ command: 'node', args: [serverScript], requestTimeoutMs: 5000 });
+      const client = new McpClient({ command: process.execPath, args: ['--import', 'tsx', serverScript], requestTimeoutMs: 5000 });
       await client.start();
       await expect(client.callTool('does-not-exist', {})).rejects.toThrow(/unknown tool/);
       await client.stop();
