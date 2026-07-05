@@ -1,11 +1,11 @@
 # 🦅 Garud Agent
 
 [![CI](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-564%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
+[![Tests](https://img.shields.io/badge/tests-719%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![Tools](https://img.shields.io/badge/tools-176-purple)]()
+[![Tools](https://img.shields.io/badge/tools-183-purple)]()
 [![Deps](https://img.shields.io/badge/runtime%20deps-0-success)]()
 
 ```
@@ -19,9 +19,9 @@
             GARUD
 ```
 
-**Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **176 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
+**Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **183 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
-> **Version:** 4.0.0 "Cumulonimbus" · Released 2026-05-27
+> **Version:** 4.2.0 "Nimbostratus" · Released 2026-07-01
 
 ## ✨ Channel adapters (v3.0)
 
@@ -43,7 +43,7 @@ workspace/
 ├── users/
 │   └── alice.md       # per-user profile
 └── logs/
-    └── 2026-05-27.md  # daily activity log
+    └── 2026-07-01.md  # daily activity log
 ```
 
 ## ✨ Heartbeat
@@ -53,15 +53,15 @@ The heartbeat subsystem performs periodic self-checks (default 60s) emitting `{u
 ## 🚀 Highlights
 
 - 🧠 **Pluggable LLM brain** — deterministic (built-in) or any OpenAI-compatible endpoint
-- 🛠️ **176 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills, soul, user, heartbeat
+- 🛠️ **183 built-in tools** — memory, math, text, json, crypto, time, geo, validate, color, array, uuid, longterm, daily, agent, node, skills, soul, user, heartbeat
 - 🌐 **50+ HTTP endpoints** — REST + Server-Sent Events streaming
 - 🔌 **WebSocket server** with auth, ping/pong, broadcast
 - 🔐 **Signed webhooks** (HMAC-SHA256) with constant-time verification
 - 📊 **Built-in dashboard** at `/` and **Prometheus metrics** at `/metrics`
 - 🧾 **Full audit log** with replay endpoint
 - ⏰ **Cron-style scheduler** for recurring messages
-- 🦅 **Mascot** — `garud mascot` shows the Cumulonimbus falcon
-- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **516 tests** in ~14 s
+- 🦅 **Mascot** — `garud mascot` shows the Skyforge falcon
+- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **719 tests** in ~20 s
 
 ## 🚀 Quick start
 
@@ -78,7 +78,7 @@ CLI:
 ```bash
 npm run cli help            # list commands (shows mascot too)
 npm run cli mascot          # show just the falcon
-npm run cli version         # garud-agent 4.0.0
+npm run cli version         # garud-agent 4.2.0
 npm run cli tools           # list all 176 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL
@@ -116,7 +116,7 @@ npm run cli repl            # interactive REPL
 | Source files | 83 |
 | Test files | 59 |
 | Lines of TypeScript | 21,785 |
-| Built-in tools | 176 |
+| Built-in tools | 183 |
 | HTTP endpoints | ~89 |
 | Test suites | 59 |
 | Tests | 692 (all passing) |

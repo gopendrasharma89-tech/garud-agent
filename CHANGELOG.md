@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.2.0] - 2026-07-01 "Nimbostratus"
+
+### Added
+- 7 new built-in tools: `number.clamp`, `number.round`, `time.duration`,
+  `url.build`, `csv.stringify`, `string.template`, `list.range` (183 total).
+
+### Fixed
+- Corrected stale README references (version, test counts, mascot name) that
+  still pointed at the 4.0.0 "Cumulonimbus" release.
+
 ## [4.1.0] — 2026-06-28 — "Altostratus"
 
 **Reliability + four new tools.**

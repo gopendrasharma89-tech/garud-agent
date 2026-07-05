@@ -2581,5 +2581,134 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
         }
       }
     },
+    {
+      name: 'number.clamp',
+      description: 'Clamp a number to a range. Input: "<n>::<min>::<max>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const parts = input.split('::');
+        if (parts.length < 3) return { content: 'number.clamp: needs <n>::<min>::<max>', error: true };
+        const n = Number(parts[0]); const min = Number(parts[1]); const max = Number(parts[2]);
+        if (![n, min, max].every((x) => Number.isFinite(x))) return { content: 'number.clamp: all values must be finite numbers', error: true };
+        if (min > max) return { content: 'number.clamp: min must be <= max', error: true };
+        return { content: String(Math.min(max, Math.max(min, n))) };
+      }
+    },
+    {
+      name: 'number.round',
+      description: 'Round a number to N decimal places (default 0). Input: "<n>" or "<n>::<decimals 0-15>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const sep = input.indexOf('::');
+        const n = Number((sep === -1 ? input : input.slice(0, sep)).trim());
+        if (!Number.isFinite(n)) return { content: 'number.round: not a finite number', error: true };
+        const d = sep === -1 ? 0 : Math.max(0, Math.min(15, parseInt(input.slice(sep + 2), 10) || 0));
+        const f = Math.pow(10, d);
+        return { content: String(Math.round((n + Number.EPSILON) * f) / f) };
+      }
+    },
+    {
+      name: 'time.duration',
+      description: 'Humanize a millisecond duration into "1d 2h 3m 4s". Input: "<milliseconds>".',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const ms = Number(input.trim());
+        if (!Number.isFinite(ms) || ms < 0) return { content: 'time.duration: needs a non-negative number of milliseconds', error: true };
+        let rem = Math.floor(ms / 1000);
+        const d = Math.floor(rem / 86400); rem %= 86400;
+        const h = Math.floor(rem / 3600); rem %= 3600;
+        const m = Math.floor(rem / 60); const s = rem % 60;
+        const parts: string[] = [];
+        if (d) parts.push(`${d}d`);
+        if (h) parts.push(`${h}h`);
+        if (m) parts.push(`${m}m`);
+        if (s || parts.length === 0) parts.push(`${s}s`);
+        return { content: parts.join(' ') };
+      }
+    },
+    {
+      name: 'url.build',
+      description: 'Build a URL from a base and query params. Input: JSON {base, query?}. Returns the full URL.',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        try {
+          const p = JSON.parse(input) as { base?: string; query?: Record<string, string | number | boolean> };
+          if (!p.base || typeof p.base !== 'string') return { content: 'url.build: base (string) required', error: true };
+          const u = new URL(p.base);
+          if (p.query && typeof p.query === 'object') {
+            for (const [k, val] of Object.entries(p.query)) u.searchParams.set(k, String(val));
+          }
+          return { content: u.toString() };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `url.build error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'csv.stringify',
+      description: 'Convert a JSON array of arrays (rows) into CSV, quoting fields when needed. Input: JSON [["a","b"],[1,2]].',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        try {
+          const rows = JSON.parse(input);
+          if (!Array.isArray(rows) || !rows.every((r) => Array.isArray(r))) return { content: 'csv.stringify: expected a JSON array of arrays', error: true };
+          const esc = (val: unknown) => {
+            const s = val === null || val === undefined ? '' : String(val);
+            return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          };
+          return { content: (rows as unknown[][]).map((r) => r.map(esc).join(',')).join('\n') };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `csv.stringify error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'string.template',
+      description: 'Render a {{key}} template against a data object. Input: JSON {template, data}. Missing keys render empty.',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        try {
+          const p = JSON.parse(input) as { template?: string; data?: Record<string, unknown> };
+          if (typeof p.template !== 'string') return { content: 'string.template: template (string) required', error: true };
+          const data = p.data && typeof p.data === 'object' ? p.data : {};
+          const out = p.template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_m, key: string) => {
+            const val = (data as Record<string, unknown>)[key];
+            return val === undefined || val === null ? '' : String(val);
+          });
+          return { content: out };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          return { content: `string.template error: ${msg}`, error: true };
+        }
+      }
+    },
+    {
+      name: 'list.range',
+      description: 'Generate a numeric range as JSON. Input: "<end>", "<start>::<end>", or "<start>::<end>::<step>". End exclusive.',
+      tags: ['read', 'safe'],
+      cacheable: true,
+      execute: (input) => {
+        const parts = input.split('::').map((x) => x.trim());
+        let start = 0, end = 0, step = 1;
+        if (parts.length === 1) { end = Number(parts[0]); }
+        else if (parts.length === 2) { start = Number(parts[0]); end = Number(parts[1]); }
+        else { start = Number(parts[0]); end = Number(parts[1]); step = Number(parts[2]); }
+        if (![start, end, step].every((x) => Number.isFinite(x))) return { content: 'list.range: values must be finite numbers', error: true };
+        if (step === 0) return { content: 'list.range: step must not be zero', error: true };
+        const count = Math.max(0, Math.ceil((end - start) / step));
+        if (count > 100000) return { content: 'list.range: range too large (>100000)', error: true };
+        const out: number[] = [];
+        for (let i = 0; i < count; i++) out.push(start + i * step);
+        return { content: JSON.stringify(out), metadata: { count: out.length } };
+      }
+    },
   ];
 }
