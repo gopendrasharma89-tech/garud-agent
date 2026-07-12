@@ -16,6 +16,7 @@ export class CircuitBreaker {
   private state: CircuitState = 'closed';
   private failures = 0;
   private openedAt = 0;
+  private probeInFlight = false;
   private nowProvider: () => number = () => Date.now();
 
   constructor(options: CircuitBreakerOptions = {}) {
@@ -32,19 +33,26 @@ export class CircuitBreaker {
     if (this.state === 'open') {
       if (this.nowProvider() - this.openedAt >= this.cooldownMs) {
         this.state = 'half-open';
+        this.probeInFlight = true;
         return true;
       }
       return false;
     }
+    // Half-open: admit exactly one probe at a time. Concurrent callers are
+    // rejected until the in-flight probe reports success or failure.
+    if (this.probeInFlight) return false;
+    this.probeInFlight = true;
     return true;
   }
 
   recordSuccess(): void {
+    this.probeInFlight = false;
     this.failures = 0;
     this.state = 'closed';
   }
 
   recordFailure(): void {
+    this.probeInFlight = false;
     if (this.state === 'half-open') {
       this.state = 'open';
       this.openedAt = this.nowProvider();

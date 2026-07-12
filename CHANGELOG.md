@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.3.0] - 2026-07-08 "Cirrostratus"
+
+### Added
+- Per-tool circuit breakers in `AgentRuntime` (opt-in via the new `breaker`
+  option): tools that keep failing are short-circuited until a cooldown
+  elapses. Includes a `garud_tool_circuit_open_total` metric, audit entries,
+  and `AgentRuntime.getToolCircuitState()` for inspection.
+
+### Fixed
+- Aborting a request now stops the remaining tool calls in that turn instead
+  of executing all of them anyway.
+- `CircuitBreaker` half-open state now admits exactly one probe at a time
+  instead of letting every concurrent caller through.
+- Retry backoff (`withRetry`/`sleep`) is now abort-aware: cancelling no
+  longer waits out the full backoff delay.
+
 ## [4.2.0] - 2026-07-01 "Nimbostratus"
 
 ### Added

@@ -55,14 +55,33 @@ export async function withRetry<T>(fn: () => Promise<T> | T, opts: RetryOptions 
       const delay = jitter ? Math.floor(exp * (0.5 + Math.random() * 0.5)) : exp;
       totalDelayMs += delay;
       opts.onRetry?.(error, attempt, delay);
-      await sleep(delay);
+      await sleep(delay, opts.signal);
     }
   }
   return { ok: false, error: lastError, attempts, totalDelayMs };
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/**
+ * Abort-aware sleep. Resolves after `ms`, or immediately once the optional
+ * signal aborts — so callers never wait out a long backoff after cancellation.
+ */
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(finish, Math.max(0, ms));
+    function finish(): void {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }
+    function onAbort(): void {
+      clearTimeout(timer);
+      finish();
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 /**

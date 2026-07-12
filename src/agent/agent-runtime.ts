@@ -10,6 +10,7 @@ import { AgentReply, ConversationTurn, Logger, Session, ToolResult } from '../ty
 import { noopLogger } from '../utils/logger.js';
 import { truncate } from '../utils/text.js';
 import { BrainProvider } from '../brain/brain.js';
+import { CircuitBreaker, CircuitBreakerOptions, CircuitState } from '../core/circuit-breaker.js';
 
 export interface AgentRuntimeOptions {
   maxToolsPerTurn?: number;
@@ -24,6 +25,8 @@ export interface AgentRuntimeOptions {
   conversation?: ConversationStore;
   metrics?: MetricsRegistry;
   skillsLoader?: (input: string) => Array<{ name: string; content: string }>;
+  /** Per-tool circuit breaker settings; omit to disable breakers. */
+  breaker?: CircuitBreakerOptions;
 }
 
 export class AgentRuntime {
@@ -39,6 +42,8 @@ export class AgentRuntime {
   private readonly conversation?: ConversationStore;
   private readonly metrics?: MetricsRegistry;
   private readonly skillsLoader?: AgentRuntimeOptions['skillsLoader'];
+  private readonly breakerOptions?: CircuitBreakerOptions;
+  private readonly breakers = new Map<string, CircuitBreaker>();
 
   constructor(
     private readonly brain: BrainProvider,
@@ -59,6 +64,7 @@ export class AgentRuntime {
     this.conversation = options.conversation;
     this.metrics = options.metrics;
     this.skillsLoader = options.skillsLoader;
+    this.breakerOptions = options.breaker;
     this.registerMetrics();
     this.applyToolQuotas();
   }
@@ -73,6 +79,7 @@ export class AgentRuntime {
     this.metrics.counter('garud_tool_errors_total', 'Tool invocations that errored');
     this.metrics.counter('garud_tool_blocked_total', 'Tool invocations blocked by policy');
     this.metrics.counter('garud_tool_quota_exceeded_total', 'Tool invocations rejected due to quota');
+    this.metrics.counter('garud_tool_circuit_open_total', 'Tool invocations rejected by an open circuit');
     this.metrics.histogram('garud_tool_duration_ms', 'Tool latency in ms',
       [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]);
   }
@@ -84,6 +91,21 @@ export class AgentRuntime {
         this.quotas.setToolLimit(tool.name, tool.dailyQuota);
       }
     }
+  }
+
+  private breakerFor(tool: string): CircuitBreaker | undefined {
+    if (!this.breakerOptions) return undefined;
+    let breaker = this.breakers.get(tool);
+    if (!breaker) {
+      breaker = new CircuitBreaker(this.breakerOptions);
+      this.breakers.set(tool, breaker);
+    }
+    return breaker;
+  }
+
+  /** Inspect a tool's circuit state (undefined when breakers are disabled). */
+  getToolCircuitState(tool: string): CircuitState | undefined {
+    return this.breakerFor(tool)?.getState();
   }
 
   async reply(
@@ -109,6 +131,11 @@ export class AgentRuntime {
     const toolOutputs: Array<{ tool: string; result: ToolResult }> = [];
     const allowed = plan.toolCalls.slice(0, this.maxToolsPerTurn);
     for (const call of allowed) {
+      // Stop executing tools once the request has been aborted.
+      if (signal?.aborted) {
+        log.warn('request aborted; skipping remaining tool calls', { requestId });
+        break;
+      }
       const tool = this.tools.get(call.tool);
       if (!tool) {
         const suggestion = this.tools.suggest(call.tool);
@@ -148,6 +175,18 @@ export class AgentRuntime {
         }
       }
 
+      // Circuit breaker check: short-circuit tools that keep failing.
+      const breaker = this.breakerFor(tool.name);
+      if (breaker && !breaker.allowRequest()) {
+        this.metrics?.inc('garud_tool_circuit_open_total', { tool: tool.name });
+        await this.safeAudit('tool', { tool: tool.name, circuitOpen: true }, session.id, requestId);
+        toolOutputs.push({
+          tool: tool.name,
+          result: { content: `circuit open for ${tool.name}: cooling down after repeated failures`, error: true }
+        });
+        continue;
+      }
+
       // Cache lookup.
       let result: ToolResult | undefined;
       if (this.cache && tool.cacheable) {
@@ -175,6 +214,10 @@ export class AgentRuntime {
             requestId
           }, { timeoutMs: this.toolTimeoutMs })
         }, { timeoutMs: this.toolTimeoutMs, logger: log, sandbox: decision.sandbox ?? false });
+        if (breaker) {
+          if (result.error) breaker.recordFailure();
+          else breaker.recordSuccess();
+        }
         if (this.cache && tool.cacheable && !result.error) {
           this.cache.set(tool.name, call.input, result);
         }
