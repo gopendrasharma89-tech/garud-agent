@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { BM25Index } from '../retrieval/bm25-index.js';
 
 /**
  * Claude-Code-style memory router. The on-disk layout is:
@@ -91,6 +92,26 @@ export class MemoryIndex {
     if (!safe) return false;
     try { await fs.unlink(path.join(this.topicDir, `${safe}.md`)); return true; }
     catch { return false; }
+  }
+
+  /**
+   * Keyword-search across all topic files using BM25. Builds a transient
+   * index over topic bodies (cheap at this scale) and returns the top-k
+   * matching topics with a short snippet for preview.
+   */
+  async searchTopics(query: string, k = 3): Promise<Array<{ topic: string; score: number; snippet: string }>> {
+    const topics = await this.listTopics();
+    if (topics.length === 0) return [];
+    const index = new BM25Index<{ topic: string }>();
+    for (const topic of topics) {
+      const body = await this.loadTopic(topic);
+      if (body) index.add({ id: topic, text: body, meta: { topic } });
+    }
+    return index.search(query, k).map((r) => ({
+      topic: r.doc.id,
+      score: r.score,
+      snippet: r.doc.text.slice(0, 160).replace(/\s+/g, ' ').trim()
+    }));
   }
 }
 

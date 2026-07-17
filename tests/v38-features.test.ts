@@ -24,7 +24,7 @@ function fakeCtx(): ToolContext {
   };
 }
 
-describe('v3.8 Cirrostratus subsystems', () => {
+describe('v3.8 Altocumulus subsystems', () => {
   describe('System tools', () => {
     it('all tools return disabled message when GARUD_SYSTEM_ACCESS is off', async () => {
       const tools = buildSystemTools({ enabled: false });

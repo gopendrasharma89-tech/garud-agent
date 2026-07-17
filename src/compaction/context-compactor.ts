@@ -51,8 +51,10 @@ export class ContextCompactor {
     if (!this.needsCompaction(turns)) {
       return { kept: turns, summary: '', flushed: [], removed: 0 };
     }
-    const recent = turns.slice(-this.opts.keepRecent);
-    const older = turns.slice(0, -this.opts.keepRecent);
+    // keepRecent=0 must keep nothing verbatim; slice(-0) would keep everything.
+    const keepRecent = Math.max(0, this.opts.keepRecent);
+    const recent = keepRecent > 0 ? turns.slice(-keepRecent) : [];
+    const older = keepRecent > 0 ? turns.slice(0, -keepRecent) : turns.slice();
     const kept = older.filter((t) => (t.importance ?? 0.5) >= this.opts.pruneBelow);
     const removed = older.length - kept.length;
     const summary = this.summarize(kept);

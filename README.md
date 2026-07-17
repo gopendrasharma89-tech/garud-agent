@@ -1,7 +1,7 @@
 # 🦅 Garud Agent
 
 [![CI](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-727%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
+[![Tests](https://img.shields.io/badge/tests-737%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
@@ -21,7 +21,7 @@
 
 **Garud** is a **local-first, policy-aware, multi-channel** agent gateway with an OpenClaw-inspired architecture: file-based persistent memory (`MEMORY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`), per-day activity logs, isolated sub-agents, event hooks, paired device nodes, context compaction, heartbeat, pluggable LLM brains, **183 built-in tools**, scheduler, signed webhooks, WebSocket, dashboard, Prometheus metrics, and audit replay — all in **strict TypeScript with zero runtime dependencies**.
 
-> **Version:** 4.3.0 "Cirrostratus" · Released 2026-07-08
+> **Version:** 4.4.0 "Altocumulus" · Released 2026-07-16
 
 ## ✨ Channel adapters (v3.0)
 
@@ -43,7 +43,7 @@ workspace/
 ├── users/
 │   └── alice.md       # per-user profile
 └── logs/
-    └── 2026-07-08.md  # daily activity log
+    └── 2026-07-16.md  # daily activity log
 ```
 
 ## ✨ Heartbeat
@@ -61,7 +61,7 @@ The heartbeat subsystem performs periodic self-checks (default 60s) emitting `{u
 - 🧾 **Full audit log** with replay endpoint
 - ⏰ **Cron-style scheduler** for recurring messages
 - 🦅 **Mascot** — `garud mascot` shows the Skyforge falcon
-- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **727 tests** in ~20 s
+- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **737 tests** in ~20 s
 - 🔌 **Per-tool circuit breakers** — repeatedly failing tools are auto-isolated until a cooldown passes (opt-in)
 
 ## 🚀 Quick start
@@ -79,7 +79,7 @@ CLI:
 ```bash
 npm run cli help            # list commands (shows mascot too)
 npm run cli mascot          # show just the falcon
-npm run cli version         # garud-agent 4.3.0
+npm run cli version         # garud-agent 4.4.0
 npm run cli tools           # list all 176 tools
 npm run cli doctor          # health check
 npm run cli repl            # interactive REPL

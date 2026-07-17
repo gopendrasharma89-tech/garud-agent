@@ -8,6 +8,8 @@ export interface ToolQuotaOptions {
   defaultLimit?: number;
   /** Window size for quota counting; defaults to 24h. */
   windowMs?: number;
+  /** Auto-prune expired buckets when the key count reaches this. Default 10_000. */
+  pruneThreshold?: number;
 }
 
 export interface ToolQuotaResult {
@@ -65,6 +67,7 @@ export class ToolQuotaManager {
     const key = this.key(sessionId, toolName);
     const existing = this.buckets.get(key);
     if (!existing || now - existing.windowStart >= window) {
+      if (!existing && this.buckets.size >= (this.options.pruneThreshold ?? 10_000)) this.prune();
       this.buckets.set(key, { count: 1, windowStart: now });
       return { allowed: true, remaining: limit - 1, resetAt: now + window, limit };
     }
@@ -106,11 +109,28 @@ export class ToolQuotaManager {
       return;
     }
     for (const key of [...this.buckets.keys()]) {
-      const [keySession, keyTool] = key.split('::');
+      // Split on the *last* '::' so session ids containing '::' still match.
+      const sep = key.lastIndexOf('::');
+      const keySession = key.slice(0, sep);
+      const keyTool = key.slice(sep + 2);
       if (sessionId && keySession !== sessionId) continue;
       if (toolName && keyTool !== toolName) continue;
       this.buckets.delete(key);
     }
+  }
+
+  /** Remove buckets whose window has fully elapsed. Returns removed count. */
+  prune(): number {
+    const now = this.nowProvider();
+    const window = this.windowMs();
+    let removed = 0;
+    for (const [key, bucket] of this.buckets) {
+      if (now - bucket.windowStart >= window) {
+        this.buckets.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   size(): number {

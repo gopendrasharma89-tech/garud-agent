@@ -40,7 +40,7 @@ function makeRuntime(brain: BrainProvider, tools: ToolRegistry, options = {}): A
   return new AgentRuntime(brain, new MemoryStore(), tools, new PolicyEngine(), options);
 }
 
-describe('v4.3.0 "Cirrostratus" — framework resilience', () => {
+describe('v4.4.0 "Altocumulus" — framework resilience', () => {
   describe('CircuitBreaker half-open probe', () => {
     it('admits exactly one probe at a time in half-open', () => {
       let now = 0;

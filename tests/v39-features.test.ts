@@ -4,7 +4,7 @@ import { HybridRetriever } from '../src/retrieval/hybrid-retriever.js';
 import { EmbeddingStore } from '../src/embeddings/embedding-store.js';
 import { EvalHarness, type EvalCase } from '../src/eval/eval-harness.js';
 
-describe('v3.9 Cirrostratus subsystems', () => {
+describe('v3.9 Altocumulus subsystems', () => {
   describe('BM25Index', () => {
     it('ranks exact-keyword hits highest', () => {
       const idx = new BM25Index();

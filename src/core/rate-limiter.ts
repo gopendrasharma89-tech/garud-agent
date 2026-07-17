@@ -4,6 +4,8 @@ export interface RateLimiterOptions {
   windowMs: number;
   maxRequests: number;
   enabled?: boolean;
+  /** Auto-prune expired buckets when the key count reaches this. Default 10_000. */
+  pruneThreshold?: number;
 }
 
 export interface RateLimitResult {
@@ -36,6 +38,7 @@ export class RateLimiter {
     const now = this.nowProvider();
     const existing = this.states.get(key);
     if (!existing || now - existing.windowStart >= this.options.windowMs) {
+      if (!existing && this.states.size >= (this.options.pruneThreshold ?? 10_000)) this.prune();
       this.states.set(key, { windowStart: now, count: 1 });
       return {
         allowed: true,
@@ -86,6 +89,19 @@ export class RateLimiter {
   reset(key?: string): void {
     if (key === undefined) this.states.clear();
     else this.states.delete(key);
+  }
+
+  /** Remove buckets whose window has fully elapsed. Returns removed count. */
+  prune(): number {
+    const now = this.nowProvider();
+    let removed = 0;
+    for (const [key, state] of this.states) {
+      if (now - state.windowStart >= this.options.windowMs) {
+        this.states.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   size(): number {

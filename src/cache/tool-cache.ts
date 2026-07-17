@@ -60,10 +60,22 @@ export class ToolCache {
   set(toolName: string, input: string, result: ToolResult): void {
     if (!this.enabled || result.error) return;
     const key = this.key(toolName, input);
+    // Delete first so re-setting an existing key refreshes its LRU position
+    // (Map.set on an existing key keeps the original insertion order, which
+    // would let a just-refreshed entry be evicted as the "oldest").
+    this.entries.delete(key);
     this.entries.set(key, {
       result,
       expiresAt: this.nowProvider() + this.ttlMs
     });
+    if (this.entries.size > this.maxEntries) {
+      // Prefer dropping expired entries before evicting live LRU ones.
+      const now = this.nowProvider();
+      for (const [k, e] of this.entries) {
+        if (this.entries.size <= this.maxEntries) break;
+        if (k !== key && now > e.expiresAt) this.entries.delete(k);
+      }
+    }
     while (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next().value;
       if (oldest === undefined) break;

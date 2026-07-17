@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.4.0] - 2026-07-16 "Altocumulus"
+
+### Added
+- `MemoryIndex.searchTopics()` — BM25 keyword search across lazy-loaded memory
+  topic files, returning the top-k topics with snippets.
+- `CronJobConfig.runOnStart` — jobs can fire once immediately when the
+  scheduler starts them instead of waiting out a full interval.
+- `RateLimiter.prune()` / `ToolQuotaManager.prune()` plus automatic pruning
+  (`pruneThreshold`, default 10 000 keys) so long-running gateways no longer
+  accumulate expired session buckets forever.
+
+### Fixed
+- `ToolCache`: refreshing an existing entry now updates its LRU position, so a
+  just-refreshed entry can no longer be evicted as the "oldest".
+- `ToolCache`: when over capacity, expired entries are dropped before live
+  least-recently-used ones.
+- `ContextCompactor`: `keepRecent: 0` no longer inverts behaviour (it used to
+  keep every turn verbatim due to `slice(-0)`); it now keeps only the summary.
+- `ToolQuotaManager.reset()` now handles session ids containing `::`.
+
 ## [4.3.0] - 2026-07-08 "Cirrostratus"
 
 ### Added

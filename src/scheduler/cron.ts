@@ -107,6 +107,9 @@ export class CronScheduler {
       void this.invoke(job);
     }, job.intervalMs);
     job.timer.unref?.();
+    if (job.config.runOnStart && job.runCount === 0) {
+      void this.invoke(job);
+    }
   }
 
   private async invoke(job: RunningJob): Promise<void> {

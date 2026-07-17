@@ -161,6 +161,8 @@ export interface CronJobConfig {
   id: string;
   interval: string | number;
   enabled?: boolean;
+  /** Fire the job once immediately when the scheduler starts it. */
+  runOnStart?: boolean;
   task: (ctx: { now: number; log: Logger }) => Promise<void> | void;
 }
 
