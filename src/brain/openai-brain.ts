@@ -1,5 +1,6 @@
-import { AgentReply } from '../types.js';
+import { AgentPlan, AgentReply, ToolCall } from '../types.js';
 import { truncate } from '../utils/text.js';
+import { extractJsonObject } from '../utils/json-extract.js';
 import { withTimeout } from '../utils/timeout.js';
 import { CircuitBreaker } from '../core/circuit-breaker.js';
 import { BrainComposeContext, BrainPlanContext, BrainProvider } from './brain.js';
@@ -17,6 +18,14 @@ export interface OpenAiBrainOptions {
   cooldownMs?: number;
   /** Extra headers for proxy/OpenRouter compatibility. */
   extraHeaders?: Record<string, string>;
+  /**
+   * 'llm' sends each turn through the model to pick tool calls and memory
+   * queries (strict-JSON contract, validated, deterministic fallback).
+   * 'deterministic' (default) keeps the zero-cost rule-based planner.
+   */
+  planningMode?: 'llm' | 'deterministic';
+  /** Max tool calls the LLM planner may emit per turn (default 6). */
+  planningMaxToolCalls?: number;
 }
 
 /**
@@ -39,8 +48,70 @@ export class OpenAiBrain implements BrainProvider {
     return this.breaker;
   }
 
-  plan(context: BrainPlanContext) {
-    return this.fallback.plan(context);
+  async plan(context: BrainPlanContext): Promise<AgentPlan> {
+    if ((this.options.planningMode ?? 'deterministic') !== 'llm' || !this.breaker.allowRequest()) {
+      return this.fallback.plan(context);
+    }
+    try {
+      const raw = await this.callApi(this.buildPlanMessages(context), context.signal, {
+        temperature: 0.1,
+        maxTokens: 600
+      });
+      const plan = sanitizeAgentPlan(
+        extractJsonObject(raw),
+        context.availableTools.map((t) => t.name),
+        this.options.planningMaxToolCalls ?? 6
+      );
+      if (!plan) throw new Error('LLM returned an unparseable plan');
+      this.breaker.recordSuccess();
+      return plan;
+    } catch {
+      this.breaker.recordFailure();
+      const fb = await Promise.resolve(this.fallback.plan(context));
+      return { ...fb, summary: `${fb.summary} [llm-plan-fallback]` };
+    }
+  }
+
+  /**
+   * Breaker-aware raw completion for a single prompt. Used by LlmPlanner and
+   * other subsystems that need model text without the compose() scaffolding.
+   */
+  async completeText(prompt: string, signal?: AbortSignal): Promise<string> {
+    if (!this.breaker.allowRequest()) throw new Error('llm-circuit-open');
+    try {
+      const text = await this.callApi([{ role: 'user', content: prompt }], signal, { temperature: 0.2 });
+      this.breaker.recordSuccess();
+      return text;
+    } catch (error) {
+      this.breaker.recordFailure();
+      throw error;
+    }
+  }
+
+  private buildPlanMessages(context: BrainPlanContext): Array<{ role: string; content: string }> {
+    const maxCalls = this.options.planningMaxToolCalls ?? 6;
+    const toolCatalog = context.availableTools
+      .map((t) => `- ${t.name}: ${truncate(t.description ?? '', 120)}`)
+      .join('\n');
+    const memoryBlock = context.recentMemories.length
+      ? 'Recent memories:\n' + context.recentMemories.slice(-5).map((m) => `- ${truncate(m.text, 120)}`).join('\n')
+      : 'No recent memories.';
+    const system = [
+      'You are the planning module of the Garud agent. Decide which tools to call',
+      'and which memory queries to run for the user request below.',
+      'Respond with ONLY a JSON object:',
+      '{"summary": string, "memoryQueries": string[], "toolCalls": [{"tool": string, "input": string}]}',
+      `Rules: use only listed tools; at most ${maxCalls} tool calls; use empty arrays when nothing is needed;`,
+      '"input" is the exact string argument passed to the tool (JSON-encoded when the tool expects JSON).',
+      `Session: user=${context.session.userId} channel=${context.session.channel} trust=${context.session.trustLevel}`,
+      memoryBlock,
+      'Available tools:',
+      toolCatalog
+    ].join('\n');
+    return [
+      { role: 'system', content: system },
+      { role: 'user', content: context.input }
+    ];
   }
 
   async compose(context: BrainComposeContext): Promise<AgentReply> {
@@ -111,7 +182,8 @@ export class OpenAiBrain implements BrainProvider {
 
   private async callApi(
     messages: Array<{ role: string; content: string }>,
-    externalSignal?: AbortSignal
+    externalSignal?: AbortSignal,
+    overrides: { temperature?: number; maxTokens?: number } = {}
   ): Promise<string> {
     const fetchFn = this.options.fetchImpl ?? globalThis.fetch;
     if (!fetchFn) throw new Error('fetch is not available in this runtime');
@@ -135,8 +207,8 @@ export class OpenAiBrain implements BrainProvider {
       body: JSON.stringify({
         model: this.options.model,
         messages,
-        temperature: this.options.temperature ?? 0.4,
-        max_tokens: this.options.maxTokens ?? 800
+        temperature: overrides.temperature ?? this.options.temperature ?? 0.4,
+        max_tokens: overrides.maxTokens ?? this.options.maxTokens ?? 800
       }),
       signal: controller.signal
     });
@@ -154,4 +226,44 @@ export class OpenAiBrain implements BrainProvider {
     if (!text) throw new Error('Empty LLM response');
     return text;
   }
+}
+
+/**
+ * Validate and normalize a model-emitted {@link AgentPlan}. Unknown tools are
+ * dropped, inputs are coerced to strings, memoryQueries are capped, and the
+ * whole plan is rejected (undefined) when the shape is not an object.
+ */
+export function sanitizeAgentPlan(
+  value: unknown,
+  availableToolNames: string[],
+  maxToolCalls: number
+): AgentPlan | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const v = value as { summary?: unknown; memoryQueries?: unknown; toolCalls?: unknown };
+  const known = new Set(availableToolNames);
+
+  const memoryQueries = Array.isArray(v.memoryQueries)
+    ? v.memoryQueries.filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+        .map((q) => q.trim().slice(0, 200)).slice(0, 3)
+    : [];
+
+  const toolCalls: ToolCall[] = [];
+  if (Array.isArray(v.toolCalls)) {
+    for (const raw of v.toolCalls) {
+      if (toolCalls.length >= Math.max(0, maxToolCalls)) break;
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as { tool?: unknown; input?: unknown };
+      if (typeof r.tool !== 'string' || !known.has(r.tool)) continue;
+      const input = typeof r.input === 'string'
+        ? r.input
+        : r.input === undefined || r.input === null ? '' : JSON.stringify(r.input);
+      toolCalls.push({ tool: r.tool, input });
+    }
+  }
+
+  return {
+    summary: typeof v.summary === 'string' && v.summary.trim() ? v.summary.trim().slice(0, 300) : 'llm-plan',
+    memoryQueries,
+    toolCalls
+  };
 }

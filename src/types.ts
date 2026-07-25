@@ -204,6 +204,8 @@ export interface AppConfig {
     cooldownMs?: number;
     /** Extra headers for proxy/OpenRouter compatibility. */
     extraHeaders?: Record<string, string>;
+    /** Route per-turn planning through the LLM (GARUD_LLM_PLANNING=1). */
+    llmPlanning?: boolean;
   };
   cache: { enabled: boolean; ttlMs: number; maxEntries: number };
   logging: { level: LogLevel; json: boolean; redactKeys?: string[] };

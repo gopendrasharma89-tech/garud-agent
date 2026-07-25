@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { GARUD_BUILD } from '../version.js';
 
 /**
  * OpenClaw-style workspace file manager. Owns three markdown documents that
@@ -148,6 +149,9 @@ You speak in the language the user used. You never make up facts.
 ## Operating notes
 - Memory: short-term in session, long-term in MEMORY.md
 - Tools: list available via \`garud tools\`; prefer specific tools over general
+- Planning: with an LLM brain and \`GARUD_LLM_PLANNING=1\`, tool calls and task
+  decomposition are model-driven with strict-JSON validation; otherwise the
+  zero-cost rule-based planner is used. Both fall back safely offline.
 - Sub-agents: spawn for parallel work; never nest them
 `;
 
@@ -156,8 +160,9 @@ const DEFAULT_IDENTITY = `# Identity
 - **name**: Garud
 - **id**: garud-agent
 - **role**: local-first agent gateway
-- **version**: 3.5.0
-- **codename**: Cumulus
+- **version**: ${GARUD_BUILD.version}
+- **codename**: ${GARUD_BUILD.codename}
+- **released**: ${GARUD_BUILD.releasedAt}
 - **homepage**: https://github.com/gopendrasharma89-tech/garud-agent
 - **license**: MIT
 `;
@@ -201,7 +206,8 @@ Entries here can be overridden per-session via the API.
 - Trust default: \`trusted\`
 
 ## planner
-- Persona: A multi-step task planner. Spawns sub-agents.
-- Tools: agent.*, longterm.*, memory.*
+- Persona: A multi-step task planner. Spawns sub-agents. Uses LLM-driven
+  decomposition (\`plan.create\`) when enabled, heuristic splitting otherwise.
+- Tools: agent.*, longterm.*, memory.*, plan.*
 - Trust default: \`owner\`
 `;

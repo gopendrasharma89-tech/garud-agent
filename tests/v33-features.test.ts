@@ -12,8 +12,8 @@ import os from 'node:os';
 
 describe('v3.3 Cirrus subsystems', () => {
   it('version constants are 3.3.0 Cirrus', () => {
-    expect(GARUD_VERSION).toBe('4.4.0');
-    expect(GARUD_BUILD.codename).toBe('Altocumulus');
+    expect(GARUD_VERSION).toBe('4.5.0');
+    expect(GARUD_BUILD.codename).toBe('Stratocumulus');
     expect(GARUD_BUILD.releasedAt).toBe('2026-07-16');
   });
 

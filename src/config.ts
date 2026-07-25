@@ -40,7 +40,8 @@ export const defaultConfig: AppConfig = {
     temperature: process.env.GARUD_LLM_TEMPERATURE ? Number(process.env.GARUD_LLM_TEMPERATURE) : 0.4,
     requestTimeoutMs: Number(process.env.GARUD_LLM_TIMEOUT_MS ?? 20_000),
     failureThreshold: Number(process.env.GARUD_LLM_FAILURE_THRESHOLD ?? 5),
-    cooldownMs: Number(process.env.GARUD_LLM_COOLDOWN_MS ?? 30_000)
+    cooldownMs: Number(process.env.GARUD_LLM_COOLDOWN_MS ?? 30_000),
+    llmPlanning: process.env.GARUD_LLM_PLANNING === '1' || process.env.GARUD_LLM_PLANNING === 'true'
   },
   cache: {
     enabled: process.env.GARUD_CACHE !== '0',

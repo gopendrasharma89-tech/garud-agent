@@ -32,7 +32,8 @@ import { EmbeddingPersistence } from './embeddings/embedding-persistence.js';
 import { CostTracker } from './cost/cost-tracker.js';
 import { Tracer } from './tracing/span.js';
 import { reflectAndRevise, textHeuristicReflector } from './reflection/reflector.js';
-import { HeuristicPlanner } from './planning/planner.js';
+import { HeuristicPlanner, PlannerStrategy } from './planning/planner.js';
+import { LlmPlanner } from './planning/llm-planner.js';
 import { MemoryIndex } from './memory/memory-index.js';
 import { SkillLibrary } from './skills/skill-library.js';
 import { AutoSkillExtractor } from './skills/auto-skill-extractor.js';
@@ -120,7 +121,9 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
       return reflectAndRevise(answer, textHeuristicReflector, { maxIterations: 2 });
     }
   };
-  const planner = new HeuristicPlanner();
+  // v4.5: planner is a mutable ref so it can be upgraded to the LLM planner
+  // once the brain exists (tools capture it lazily via the deps getter).
+  const plannerRef: { current: PlannerStrategy } = { current: new HeuristicPlanner() };
   // v3.5 OpenClaw/Hermes parity
   const memoryIndex = new MemoryIndex(config.storage.workspaceDir);
   const skillLibrary = new SkillLibrary(path.join(config.storage.workspaceDir, 'skills'));
@@ -156,7 +159,7 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
     costTracker,
     tracer,
     reflector,
-    planner,
+    get planner() { return plannerRef.current; },
     memoryIndex,
     skillLibrary,
     hybrid,
@@ -232,6 +235,11 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   // size; AutoSkillExtractor sits inside so a learning failure can't break
   // cost accounting.
   const baseBrain = buildBrain(config);
+  // v4.5: LLM-driven planning — also upgrade task decomposition (plan.create)
+  // to the LLM planner; it validates output and falls back to heuristics.
+  if (config.brain.llmPlanning && baseBrain instanceof OpenAiBrain) {
+    plannerRef.current = new LlmPlanner((prompt) => baseBrain.completeText(prompt));
+  }
   const learningBrain = new AutoSkillExtractor(baseBrain, skillLibrary);
   const brain: BrainProvider = new AutoCostBrain(learningBrain, costTracker);
 
@@ -411,7 +419,8 @@ function buildBrain(config: AppConfig): BrainProvider {
       timeoutMs: config.brain.requestTimeoutMs,
       failureThreshold: config.brain.failureThreshold,
       cooldownMs: config.brain.cooldownMs,
-      extraHeaders: config.brain.extraHeaders
+      extraHeaders: config.brain.extraHeaders,
+      planningMode: config.brain.llmPlanning ? 'llm' : 'deterministic'
     });
   }
   return new DeterministicBrain();

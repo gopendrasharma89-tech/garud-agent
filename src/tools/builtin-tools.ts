@@ -24,7 +24,7 @@ export interface BuiltinToolDeps {
   costTracker?: import('../cost/cost-tracker.js').CostTracker;
   tracer?: import('../tracing/span.js').Tracer;
   reflector?: { revise(answer: string, goal?: string): Promise<{ output: string; iterations: number; accepted: boolean; critiques: string[] }> };
-  planner?: import('../planning/planner.js').HeuristicPlanner;
+  planner?: import('../planning/planner.js').PlannerStrategy;
   memoryIndex?: import('../memory/memory-index.js').MemoryIndex;
   skillLibrary?: import('../skills/skill-library.js').SkillLibrary;
   codeRunner?: import('../sandbox/code-runner.js').CodeRunner;
@@ -2184,13 +2184,14 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     {
       name: 'plan.create',
-      description: 'Generate a heuristic plan for a goal. Input: JSON {goal, tools?: string[]}.',
-      execute: (input) => {
+      description: 'Decompose a goal into ordered sub-tasks (LLM-driven when GARUD_LLM_PLANNING=1, heuristic otherwise). Input: JSON {goal, tools?: string[], maxSteps?: number}.',
+      execute: async (input) => {
         if (!deps.planner) return { content: 'plan.create: not enabled', error: true };
         try {
-          const p = JSON.parse(input) as { goal: string; tools?: string[] };
+          const p = JSON.parse(input) as { goal: string; tools?: string[]; maxSteps?: number };
           if (!p.goal) return { content: 'plan.create: goal required', error: true };
-          const plan = deps.planner.plan(p.goal, { availableTools: p.tools ?? [] });
+          const plan = await Promise.resolve(
+            deps.planner.plan(p.goal, { availableTools: p.tools ?? [], maxSteps: p.maxSteps }));
           return { content: JSON.stringify(plan) };
         } catch (e) { return { content: `plan.create: ${(e as Error).message}`, error: true }; }
       }

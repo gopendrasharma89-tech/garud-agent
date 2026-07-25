@@ -11,9 +11,9 @@ import { CronScheduler } from '../src/scheduler/cron.js';
 import { GARUD_VERSION, GARUD_BUILD } from '../src/version.js';
 
 describe('v4.4.0 "Altocumulus"', () => {
-  it('reports version 4.4.0 Altocumulus', () => {
-    expect(GARUD_VERSION).toBe('4.4.0');
-    expect(GARUD_BUILD.codename).toBe('Altocumulus');
+  it('reports version 4.5.0 Stratocumulus', () => {
+    expect(GARUD_VERSION).toBe('4.5.0');
+    expect(GARUD_BUILD.codename).toBe('Stratocumulus');
   });
 
   it('ToolCache: refreshing an entry updates its LRU position', () => {
