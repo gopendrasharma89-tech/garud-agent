@@ -46,8 +46,8 @@ describe('v0.7 server endpoints', () => {
     };
     expect(body.ok).toBe(true);
     expect(body.version).toBe('4.5.0');
-    expect(body.codename).toBe('Altocumulus');
-    expect(body.releasedAt).toBe('2026-07-16');
+    expect(body.codename).toBe('Stratocumulus');
+    expect(body.releasedAt).toBe('2026-07-20');
     expect(body.node).toMatch(/^v\d+/);
     expect(typeof body.uptime).toBe('number');
   });

@@ -72,13 +72,13 @@ describe('OpenAiBrain', () => {
     expect(reply.notes).toContain('llm-fallback');
   });
 
-  it('uses planner from the deterministic fallback', () => {
+  it('uses planner from the deterministic fallback', async () => {
     const brain = new OpenAiBrain({
       apiBase: 'https://api.example.com/v1',
       apiKey: 'sk-test',
       model: 'test-model'
     });
-    const plan = brain.plan({
+    const plan = await brain.plan({
       input: 'remember this',
       session,
       availableTools: [],

@@ -1,5 +1,35 @@
 # Changelog
 
+## [4.5.0] - 2026-07-20 "Stratocumulus"
+
+### Added
+- **LLM-driven planning** — `OpenAiBrain.plan()` now routes per-turn planning
+  through the model when `GARUD_LLM_PLANNING=1`. Previously it *always* used
+  the deterministic fallback, so the LLM never influenced tool selection.
+  Strict-JSON contract (`{summary, memoryQueries, toolCalls}`), defensive
+  parsing, unknown-tool filtering, and deterministic fallback on any failure
+  or open circuit.
+- `LlmPlanner` — LLM task decomposition behind `plan.create`: sanitized ids,
+  tool hints filtered to the live registry, cycle-free dependencies, and
+  heuristic fallback when the model is unavailable or emits garbage.
+- `OpenAiBrain.completeText()` — circuit-breaker-aware raw completion helper
+  reused by the planner and other subsystems.
+- `extractJsonObject()` — robust JSON extraction from fenced / prose-wrapped
+  LLM output (balanced-brace scan, string-escape aware).
+- `plan.create` accepts `maxSteps` and awaits async planner strategies.
+- `GARUD_LLM_PLANNING` env flag; `planningMode` / `planningMaxToolCalls`
+  options on `OpenAiBrain`.
+
+### Fixed
+- The LLM brain silently ignored the model for planning (see Added) — the
+  headline gap this release closes.
+- Default workspace `IDENTITY.md` was hardcoded to v3.5.0 "Cumulus"; it now
+  tracks the live build (version, codename, release date) automatically.
+
+### Changed
+- Default workspace `SOUL.md` / `AGENTS.md` now document planning behaviour
+  and grant the planner persona `plan.*` tools.
+
 ## [4.4.0] - 2026-07-16 "Altocumulus"
 
 ### Added
