@@ -34,8 +34,8 @@ function llmResponse(content: string): Response {
 
 describe('v4.5.0 "Stratocumulus" — LLM-driven planning', () => {
   it('reports version 4.5.0 Stratocumulus', () => {
-    expect(GARUD_VERSION).toBe('4.5.0');
-    expect(GARUD_BUILD.codename).toBe('Stratocumulus');
+    expect(GARUD_VERSION).toBe('4.6.0');
+    expect(GARUD_BUILD.codename).toBe('Cirrocumulus');
   });
 
   describe('extractJsonObject', () => {

@@ -1,5 +1,32 @@
 # Changelog
 
+## [4.6.0] - 2026-07-29 "Cirrocumulus"
+
+### Added
+- **Crew cancellation & turn timeouts** — `Crew.run(goal, { signal, turnTimeoutMs })`
+  aborts between turns *and* interrupts the in-flight agent turn; a stuck
+  member can no longer wedge the whole crew.
+- **Real sub-agent cancellation** — each `SubAgentRunner` job now carries its
+  own `AbortController`; `cancel()` aborts *running* jobs (settling them as
+  `failed` / `cancelled`), not just pending ones.
+- `EventBus.once()` (single-delivery subscription) and
+  `EventBus.waitFor(event, timeoutMs?)` (promise for the next payload).
+- **Durable workflow step retries** — `WorkflowStep.retries` /
+  `retryDelayMs` re-run flaky steps before recording an error event.
+- Sub-agent job auto-pruning on spawn (constructor `retentionMs`, default 1 h).
+- `roundRobinSupervisor(crew, cycles)` — optional multi-cycle rounds.
+
+### Fixed
+- `CrewRunResult` documented an `'aborted'` status that no code path could
+  ever produce — there was no way to abort a crew at all.
+- `SubAgentRunner.cancel()` silently did nothing for running jobs while
+  claiming best-effort cancellation.
+- `EventBus.emit()` iterated the live handler set, so a handler subscribing
+  to its own event re-entrantly ran within the same emit (and could loop).
+- Duplicate workflow step names were accepted, silently skipping the second
+  step after the first checkpointed — now rejected up front.
+- README release date was stale (showed the v4.4.0 date).
+
 ## [4.5.0] - 2026-07-20 "Stratocumulus"
 
 ### Added

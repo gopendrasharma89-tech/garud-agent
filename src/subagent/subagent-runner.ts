@@ -7,6 +7,11 @@ import { noopLogger } from '../utils/logger.js';
  * Sub-agent runner (OpenClaw-inspired). Runs an isolated background turn
  * without blocking the main conversation. Sub-agents cannot nest — any
  * attempt by a sub-agent to spawn another sub-agent is rejected.
+ *
+ * Each job carries its own AbortController, so `cancel()` interrupts
+ * *running* jobs too (the runtime honours the signal), not just pending
+ * ones. Settled jobs older than `retentionMs` are pruned automatically on
+ * every spawn to bound memory in long-running gateways.
  */
 export interface SubAgentJob {
   id: string;
@@ -20,16 +25,20 @@ export interface SubAgentJob {
 
 export class SubAgentRunner {
   private readonly jobs = new Map<string, SubAgentJob>();
+  private readonly controllers = new Map<string, AbortController>();
+  private readonly cancelRequested = new Set<string>();
   private activeCount = 0;
 
   constructor(
     private readonly runtime: AgentRuntime,
     private readonly maxConcurrent = 4,
-    private readonly logger: Logger = noopLogger
+    private readonly logger: Logger = noopLogger,
+    private readonly retentionMs = 3600_000
   ) {}
 
   /** Spawn a background sub-agent. Returns the job id immediately. */
   spawn(task: string, parentSession: Session): { jobId: string; accepted: boolean; reason?: string } {
+    this.prune(this.retentionMs);
     if ((parentSession as Session & { settings: { isSubAgent?: boolean } }).settings.isSubAgent) {
       return { jobId: '', accepted: false, reason: 'sub-agents cannot nest' };
     }
@@ -52,6 +61,8 @@ export class SubAgentRunner {
   private async runJob(job: SubAgentJob, parent: Session): Promise<void> {
     this.activeCount += 1;
     job.status = 'running';
+    const controller = new AbortController();
+    this.controllers.set(job.id, controller);
     try {
       const subSession: Session = {
         ...parent,
@@ -59,15 +70,24 @@ export class SubAgentRunner {
         role: 'automation',
         settings: { ...parent.settings, isSubAgent: true, parentSessionId: parent.id }
       };
-      const reply = await this.runtime.reply(subSession, job.task, undefined, job.id);
-      job.result = reply.text;
-      job.status = 'done';
+      const reply = await this.runtime.reply(subSession, job.task, controller.signal, job.id);
+      if (this.cancelRequested.has(job.id)) {
+        job.status = 'failed';
+        job.error = 'cancelled';
+      } else {
+        job.result = reply.text;
+        job.status = 'done';
+      }
     } catch (error) {
       job.status = 'failed';
-      job.error = error instanceof Error ? error.message : String(error);
+      job.error = this.cancelRequested.has(job.id)
+        ? 'cancelled'
+        : error instanceof Error ? error.message : String(error);
     } finally {
       job.finishedAt = Date.now();
       this.activeCount -= 1;
+      this.controllers.delete(job.id);
+      this.cancelRequested.delete(job.id);
     }
   }
 
@@ -92,7 +112,12 @@ export class SubAgentRunner {
     }
   }
 
-  /** Best-effort cancel — marks pending jobs as failed. Running jobs continue. */
+  /**
+   * Cancel a job. Pending jobs are settled immediately; running jobs are
+   * aborted via their AbortSignal (the runtime stops at the next checkpoint)
+   * and settle as `failed` with error `cancelled`. Returns false if the job
+   * is missing or already settled.
+   */
   cancel(jobId: string): boolean {
     const job = this.jobs.get(jobId);
     if (!job) return false;
@@ -100,6 +125,13 @@ export class SubAgentRunner {
       job.status = 'failed';
       job.error = 'cancelled';
       job.finishedAt = Date.now();
+      return true;
+    }
+    if (job.status === 'running') {
+      const controller = this.controllers.get(jobId);
+      if (!controller) return false;
+      this.cancelRequested.add(jobId);
+      controller.abort();
       return true;
     }
     return false;

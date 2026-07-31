@@ -12,8 +12,8 @@ import { GARUD_VERSION, GARUD_BUILD } from '../src/version.js';
 
 describe('v4.4.0 "Altocumulus"', () => {
   it('reports version 4.5.0 Stratocumulus', () => {
-    expect(GARUD_VERSION).toBe('4.5.0');
-    expect(GARUD_BUILD.codename).toBe('Stratocumulus');
+    expect(GARUD_VERSION).toBe('4.6.0');
+    expect(GARUD_BUILD.codename).toBe('Cirrocumulus');
   });
 
   it('ToolCache: refreshing an entry updates its LRU position', () => {

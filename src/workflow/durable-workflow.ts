@@ -29,6 +29,10 @@ import path from 'node:path';
 export type WorkflowStep<TState> = {
   name: string;
   run: (state: TState) => Promise<Partial<TState> | void> | Partial<TState> | void;
+  /** Retry the step this many times (max 10) before recording an error event. */
+  retries?: number;
+  /** Delay between retry attempts, in ms. */
+  retryDelayMs?: number;
 };
 
 export interface WorkflowRunResult<TState> {
@@ -68,6 +72,8 @@ export class DurableWorkflowRunner {
     const t0 = Date.now();
     const safe = sanitiseId(id);
     if (!safe) return { id: '', status: 'failed', state: initialState, completedSteps: [], error: 'invalid workflow id', durationMs: 0 };
+    const dup = findDuplicateStepName(steps);
+    if (dup) return { id: safe, status: 'failed', state: initialState, completedSteps: [], error: `duplicate step name: ${dup}`, durationMs: Date.now() - t0 };
     await fs.mkdir(this.dir, { recursive: true });
     const logPath = path.join(this.dir, `${safe}.jsonl`);
 
@@ -91,7 +97,7 @@ export class DurableWorkflowRunner {
     for (const step of steps) {
       if (completedNames.has(step.name)) continue;
       try {
-        const patch = await Promise.resolve(step.run(state));
+        const patch = await execStepWithRetries(step, state);
         if (patch && typeof patch === 'object') Object.assign(state as object, patch);
         await this.append(logPath, { t: 'step', ts: Date.now(), name: step.name, output: patch ?? null });
         completedSteps.push(step.name);
@@ -140,6 +146,30 @@ export class DurableWorkflowRunner {
     }
     return out;
   }
+}
+
+function findDuplicateStepName<TState>(steps: WorkflowStep<TState>[]): string | null {
+  const seen = new Set<string>();
+  for (const step of steps) {
+    if (seen.has(step.name)) return step.name;
+    seen.add(step.name);
+  }
+  return null;
+}
+
+async function execStepWithRetries<TState>(step: WorkflowStep<TState>, state: TState): Promise<Partial<TState> | void> {
+  const attempts = Math.max(0, Math.min(10, Math.floor(step.retries ?? 0))) + 1;
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await Promise.resolve(step.run(state));
+    } catch (error) {
+      lastError = error;
+      const delay = step.retryDelayMs ?? 0;
+      if (i < attempts - 1 && delay > 0) await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
 }
 
 function sanitiseId(id: string): string {
