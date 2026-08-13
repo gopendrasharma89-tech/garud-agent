@@ -111,15 +111,20 @@ export class HeartbeatScheduler {
         if (typeof t.unref === 'function') t.unref();
         this.timers.push(t);
       } else if (entry.kind === 'dailyAt' && entry.everyMs) {
-        const firstFire = setTimeout(() => {
+        // Recompute the delay to the next HH:MM after every fire so clock
+        // changes (DST, manual adjustment) never accumulate drift — a fixed
+        // 24 h interval slowly walks away from the requested wall-clock time.
+        const [hhStr, mmStr] = (entry.at ?? '09:00').split(':');
+        const hh = parseInt(hhStr ?? '9', 10);
+        const mm = parseInt(mmStr ?? '0', 10);
+        const fireDaily = (): void => {
           if (this.stopped) return;
           onTick({ section: r.section, rule: r.rule, kind: 'dailyAt', firedAt: Date.now() });
-          const daily = setInterval(() => {
-            if (!this.stopped) onTick({ section: r.section, rule: r.rule, kind: 'dailyAt', firedAt: Date.now() });
-          }, 24 * 60 * 60 * 1000);
-          if (typeof daily.unref === 'function') daily.unref();
-          this.timers.push(daily);
-        }, entry.everyMs);
+          const next = setTimeout(fireDaily, msUntilDaily(hh, mm));
+          if (typeof next.unref === 'function') next.unref();
+          this.timers.push(next);
+        };
+        const firstFire = setTimeout(fireDaily, entry.everyMs);
         if (typeof firstFire.unref === 'function') firstFire.unref();
         this.timers.push(firstFire);
       } else if (entry.kind === 'weekly' && entry.everyMs) {

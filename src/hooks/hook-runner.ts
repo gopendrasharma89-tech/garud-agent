@@ -23,6 +23,7 @@ export interface HookDefinition {
 export class HookRunner {
   private readonly hooks = new Map<string, HookDefinition[]>();
   private readonly stats = new Map<string, { fired: number; errors: number }>();
+  private readonly subscribed = new Set<string>();
 
   constructor(private readonly bus: BusLike, private readonly logger: Logger = noopLogger) {}
 
@@ -31,8 +32,11 @@ export class HookRunner {
     list.push(hook);
     this.hooks.set(hook.event, list);
     this.stats.set(hook.name, { fired: 0, errors: 0 });
-    // Subscribe lazily once per event.
-    if (list.length === 1) {
+    // Subscribe lazily once per event *lifetime* — re-registering after a
+    // full unregister must not create a second bus subscription, or every
+    // emit would fire hooks twice.
+    if (!this.subscribed.has(hook.event)) {
+      this.subscribed.add(hook.event);
       this.bus.on(hook.event, (payload: unknown) => {
         void this.fire(hook.event, payload);
       });

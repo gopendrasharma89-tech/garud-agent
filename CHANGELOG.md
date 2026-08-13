@@ -1,5 +1,40 @@
 # Changelog
 
+## [4.7.0] - 2026-08-02 "Cumulonimbus"
+
+### Added
+- **Metadata-filtered retrieval** — `EmbeddingStore.search(query, k, { filter })`
+  and `HybridRetriever.search(..., { filter })` restrict results by document
+  metadata before ranking/fusion.
+- **Cost budgets** — `CostTracker.setBudget()` / `budgetStatus()` /
+  `clearBudget()` / `listBudgets()` track usage against global or per-session
+  limits (tokens in/out, tool calls, USD).
+- **Snapshot retention** — `JsonFileStore.pruneSnapshots(keep)` deletes all but
+  the newest N workspace snapshots.
+- 4 new built-in tools: `cost.setBudget`, `cost.budgetStatus`,
+  `embeddings.remove`, `hooks.resetStats` (183 → 187).
+
+### Fixed
+- **TF-IDF vector misalignment** — `EmbeddingStore` froze dense vectors against
+  the sorted vocabulary *at add time*; once later documents introduced new
+  terms, dimension `i` no longer meant the same term across vectors, so cosine
+  compared mismatched dimensions and silently returned meaningless scores
+  (often dropping the best match entirely). Similarity is now computed sparsely
+  per-term at query time with live document frequencies.
+- `EmbeddingStore.remove()` never decremented document frequencies (and
+  re-adding an id double-counted them), permanently skewing IDF weights.
+- `HookRunner` double-fire — unregistering every hook for an event and then
+  registering a new one created a second bus subscription, so each emit fired
+  hooks twice.
+- `daily at HH:MM` heartbeat rules drifted after the first fire — the fixed
+  24 h interval ignored DST/clock changes; the next fire is now recomputed
+  from the wall clock each day.
+- **`LongTermMemory` lost updates** — concurrent `append()` calls each re-read
+  the same stale cache, so the last writer won and facts were silently
+  dropped (3 parallel appends persisted only 1); they also raced parallel
+  write+rename on the shared temp file. Mutations are now serialised
+  end-to-end.
+
 ## [4.6.0] - 2026-07-29 "Cirrocumulus"
 
 ### Added

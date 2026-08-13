@@ -9,6 +9,7 @@ import path from 'node:path';
 export class LongTermMemory {
   private cache: string | undefined;
   private dirty = false;
+  private mutation: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly filePath: string) {}
 
@@ -25,6 +26,10 @@ export class LongTermMemory {
 
   /** Append a new fact under a section header. Returns the appended fact line. */
   async append(section: string, fact: string): Promise<string> {
+    return this.runExclusive(() => this.appendUnlocked(section, fact));
+  }
+
+  private async appendUnlocked(section: string, fact: string): Promise<string> {
     const current = await this.read();
     const stamp = new Date().toISOString().slice(0, 10);
     const cleanFact = fact.trim();
@@ -57,6 +62,10 @@ export class LongTermMemory {
 
   /** Erase all long-term memory. Returns the number of bytes removed. */
   async clear(): Promise<number> {
+    return this.runExclusive(() => this.clearUnlocked());
+  }
+
+  private async clearUnlocked(): Promise<number> {
     const before = this.cache?.length ?? (await this.read()).length;
     this.cache = '';
     this.dirty = true;
@@ -74,6 +83,10 @@ export class LongTermMemory {
 
   /** Replace the entire memory file with a new body. Cap: 5 MiB. */
   async replace(body: string): Promise<void> {
+    return this.runExclusive(() => this.replaceUnlocked(body));
+  }
+
+  private async replaceUnlocked(body: string): Promise<void> {
     const MAX_BYTES = 5 * 1024 * 1024;
     if (Buffer.byteLength(body, 'utf8') > MAX_BYTES) {
       throw new Error(`MEMORY.md too large (max ${MAX_BYTES} bytes)`);
@@ -91,6 +104,18 @@ export class LongTermMemory {
     await fs.writeFile(tmp, this.cache, 'utf8');
     await fs.rename(tmp, this.filePath);
     this.dirty = false;
+  }
+
+  /**
+   * Serialise mutations. Concurrent append()/replace()/clear() calls used to
+   * read the same stale cache (last writer wins — facts silently lost) and
+   * race parallel write+rename on the shared temp file. Chaining mutations
+   * makes each one read-modify-write atomically.
+   */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.mutation.catch(() => undefined).then(fn);
+    this.mutation = next.catch(() => undefined);
+    return next;
   }
 
   /** Search facts by substring. Returns matching lines with their section. */

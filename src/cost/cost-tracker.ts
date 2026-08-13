@@ -32,9 +32,27 @@ export interface PriceTable {
   perToolCall?: number;
 }
 
+export interface CostBudget {
+  /** Scope to one session; omit for a global budget. */
+  sessionId?: string;
+  maxTokensIn?: number;
+  maxTokensOut?: number;
+  maxToolCalls?: number;
+  maxUsd?: number;
+}
+
+export interface BudgetStatus {
+  budget: CostBudget;
+  usage: CostSummary;
+  /** Which limits are currently exceeded (e.g. ['maxUsd']). */
+  exceeded: string[];
+  withinBudget: boolean;
+}
+
 export class CostTracker {
   private readonly records: CostRecord[] = [];
   private priceTable: PriceTable = {};
+  private readonly budgets = new Map<string, CostBudget>();
 
   /** Update the price table used by `summary()`. */
   setPriceTable(table: PriceTable): void { this.priceTable = { ...table }; }
@@ -87,6 +105,33 @@ export class CostTracker {
       return true;
     });
     return filter.limit ? out.slice(-filter.limit) : out;
+  }
+
+  /** Set (or replace) a budget. One global budget plus one per sessionId. */
+  setBudget(budget: CostBudget): void {
+    this.budgets.set(budget.sessionId ?? '', { ...budget });
+  }
+
+  /** Remove a budget. Returns true when one existed. */
+  clearBudget(sessionId?: string): boolean {
+    return this.budgets.delete(sessionId ?? '');
+  }
+
+  listBudgets(): CostBudget[] {
+    return Array.from(this.budgets.values(), (b) => ({ ...b }));
+  }
+
+  /** Compare current usage against the configured budget (global or session). */
+  budgetStatus(sessionId?: string): BudgetStatus | undefined {
+    const budget = this.budgets.get(sessionId ?? '');
+    if (!budget) return undefined;
+    const usage = this.summary(budget.sessionId !== undefined ? { sessionId: budget.sessionId } : {});
+    const exceeded: string[] = [];
+    if (budget.maxTokensIn !== undefined && usage.tokensIn > budget.maxTokensIn) exceeded.push('maxTokensIn');
+    if (budget.maxTokensOut !== undefined && usage.tokensOut > budget.maxTokensOut) exceeded.push('maxTokensOut');
+    if (budget.maxToolCalls !== undefined && usage.toolCalls > budget.maxToolCalls) exceeded.push('maxToolCalls');
+    if (budget.maxUsd !== undefined && usage.costUsd > budget.maxUsd) exceeded.push('maxUsd');
+    return { budget: { ...budget }, usage, exceeded, withinBudget: exceeded.length === 0 };
   }
 
   clear(): void { this.records.length = 0; }

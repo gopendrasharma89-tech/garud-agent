@@ -1660,6 +1660,15 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       }
     },
     {
+      name: 'hooks.resetStats',
+      description: 'Reset fired/error counters for all registered hooks.',
+      execute: () => {
+        if (!deps.hooks) return { content: 'hooks.resetStats: not configured', error: true };
+        deps.hooks.resetStats();
+        return { content: JSON.stringify({ ok: true }) };
+      }
+    },
+    {
       name: 'hooks.byEvent',
       description: 'List hooks registered for a specific event name.',
       tags: ['read', 'hooks'],
@@ -2093,6 +2102,22 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
     },
     // ===== v3.3 Cirrus: graph/crew/reflect/plan/embeddings/cost/trace =====
     {
+      name: 'embeddings.remove',
+      description: 'Remove a document from the semantic store. Input: JSON {id}.',
+      execute: async (input) => {
+        if (!deps.embeddings) return { content: 'embeddings.remove: not enabled', error: true };
+        try {
+          const p = JSON.parse(input) as { id?: string };
+          if (!p.id) return { content: 'embeddings.remove: id required', error: true };
+          const removed = deps.embeddings.remove(p.id);
+          if (removed && deps.embeddingPersistence) {
+            try { await deps.embeddingPersistence.save(deps.embeddings, deps.embeddings.all()); } catch { /* best-effort */ }
+          }
+          return { content: JSON.stringify({ ok: true, removed, size: deps.embeddings.size() }) };
+        } catch (e) { return { content: `embeddings.remove: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
       name: 'embeddings.add',
       description: 'Add a document to the embedding store. Input: JSON {id, text, meta?}.',
       execute: async (input) => {
@@ -2128,6 +2153,31 @@ export function buildBuiltinTools(deps: BuiltinToolDeps): ToolDefinition[] {
       execute: () => {
         if (!deps.embeddings) return { content: 'embeddings.size: not enabled', error: true };
         return { content: JSON.stringify({ size: deps.embeddings.size() }) };
+      }
+    },
+    {
+      name: 'cost.setBudget',
+      description: 'Set a usage budget (global or per-session). Input: JSON {sessionId?, maxTokensIn?, maxTokensOut?, maxToolCalls?, maxUsd?}.',
+      execute: (input) => {
+        if (!deps.costTracker) return { content: 'cost.setBudget: not enabled', error: true };
+        try {
+          const p = JSON.parse(input || '{}') as { sessionId?: string; maxTokensIn?: number; maxTokensOut?: number; maxToolCalls?: number; maxUsd?: number };
+          deps.costTracker.setBudget(p);
+          return { content: JSON.stringify({ ok: true, budgets: deps.costTracker.listBudgets().length }) };
+        } catch (e) { return { content: `cost.setBudget: ${(e as Error).message}`, error: true }; }
+      }
+    },
+    {
+      name: 'cost.budgetStatus',
+      description: 'Check usage against a configured budget. Input: JSON {sessionId?} (omit for the global budget).',
+      execute: (input) => {
+        if (!deps.costTracker) return { content: 'cost.budgetStatus: not enabled', error: true };
+        try {
+          const p = JSON.parse(input || '{}') as { sessionId?: string };
+          const status = deps.costTracker.budgetStatus(p.sessionId);
+          if (!status) return { content: 'cost.budgetStatus: no budget configured', error: true };
+          return { content: JSON.stringify(status) };
+        } catch (e) { return { content: `cost.budgetStatus: ${(e as Error).message}`, error: true }; }
       }
     },
     {

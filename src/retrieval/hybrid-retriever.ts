@@ -32,6 +32,8 @@ export interface HybridOptions {
   vectorWeight?: number;
   /** Per-system top-K to consider before fusion. Default 20. */
   perSystemK?: number;
+  /** Only fuse documents whose metadata passes this predicate. */
+  filter?: (meta: Record<string, unknown> | undefined) => boolean;
 }
 
 export class HybridRetriever {
@@ -60,8 +62,12 @@ export class HybridRetriever {
     const wV = opts.vectorWeight ?? 1;
     const perK = Math.max(finalK, opts.perSystemK ?? 20);
 
-    const bm25Results = wB > 0 ? this.bm25.search(query, perK) : [];
-    const vecResults = wV > 0 ? await this.vectors.search(query, perK) : [];
+    const keep = opts.filter;
+    const bm25All = wB > 0 ? this.bm25.search(query, perK) : [];
+    const bm25Results = keep ? bm25All.filter((r) => keep(r.doc.meta)) : bm25All;
+    const vecResults = wV > 0
+      ? await this.vectors.search(query, perK, keep ? { filter: (meta) => keep(meta) } : {})
+      : [];
 
     // Build a fused score map keyed by doc id.
     const fused = new Map<string, HybridSearchResult>();

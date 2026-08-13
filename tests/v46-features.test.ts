@@ -27,11 +27,11 @@ function fakeRuntime(delayMs: number): AgentRuntime {
 
 const session = { id: 'sess-v46', settings: {} } as unknown as Session;
 
-describe('v4.6.0 "Cirrocumulus" — orchestration hardening', () => {
-  it('reports version 4.6.0 Cirrocumulus', () => {
-    expect(GARUD_VERSION).toBe('4.6.0');
-    expect(GARUD_BUILD.codename).toBe('Cirrocumulus');
-    expect(GARUD_BUILD.releasedAt).toBe('2026-07-29');
+describe('v4.7.0 "Cumulonimbus" — orchestration hardening', () => {
+  it('reports version 4.7.0 Cumulonimbus', () => {
+    expect(GARUD_VERSION).toBe('4.7.0');
+    expect(GARUD_BUILD.codename).toBe('Cumulonimbus');
+    expect(GARUD_BUILD.releasedAt).toBe('2026-08-02');
   });
 });
 

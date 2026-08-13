@@ -211,4 +211,34 @@ export class JsonFileStore {
       return [];
     }
   }
+
+  /**
+   * Snapshot retention: keep only the newest `keep` snapshots (by mtime) and
+   * delete the rest. Returns the names of the deleted snapshots.
+   */
+  async pruneSnapshots(keep: number): Promise<string[]> {
+    if (!Number.isInteger(keep) || keep < 0) {
+      throw new Error('pruneSnapshots: keep must be a non-negative integer');
+    }
+    const dir = path.join(this.workspaceDir, 'snapshots');
+    let files: string[];
+    try { files = await fs.readdir(dir); } catch { return []; }
+    const snaps: Array<{ file: string; name: string; mtime: number }> = [];
+    for (const f of files) {
+      if (!f.endsWith('.json') && !f.endsWith('.json.gz')) continue;
+      try {
+        const st = await fs.stat(path.join(dir, f));
+        snaps.push({ file: f, name: f.replace(/\.json(\.gz)?$/, ''), mtime: st.mtimeMs });
+      } catch { /* deleted concurrently */ }
+    }
+    snaps.sort((a, b) => b.mtime - a.mtime);
+    const deleted: string[] = [];
+    for (const s of snaps.slice(keep)) {
+      try {
+        await fs.unlink(path.join(dir, s.file));
+        deleted.push(s.name);
+      } catch { /* deleted concurrently */ }
+    }
+    return deleted;
+  }
 }
