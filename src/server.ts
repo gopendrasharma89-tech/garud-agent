@@ -3,6 +3,7 @@ import { Gateway } from './gateway.js';
 import { ToolRegistry } from './core/tool-registry.js';
 import { MetricsRegistry } from './metrics/registry.js';
 import { renderDashboard } from './middleware/dashboard.js';
+import { renderWebChat } from './webchat/webchat-page.js';
 import { verifySignature } from './webhook/signature.js';
 import { AppConfig, AuditEntry, IncomingMessage, Logger, TrustLevel } from './types.js';
 import { noopLogger } from './utils/logger.js';
@@ -239,6 +240,14 @@ export function createServer(deps: ServerDeps): http.Server {
           conversations: stats.conversations
         });
         return sendText(res, 200, 'text/html; charset=utf-8', html);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/webchat' && config.dashboard.enabled) {
+        return sendText(res, 200, 'text/html; charset=utf-8', renderWebChat({
+          agent: config.agent.name,
+          version: GARUD_VERSION,
+          webhookPrefix: config.webhook.pathPrefix
+        }));
       }
 
       if (req.method === 'GET' && url.pathname === '/metrics' && config.metrics.enabled && metrics) {

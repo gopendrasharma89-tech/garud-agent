@@ -86,6 +86,17 @@ export const defaultConfig: AppConfig = {
       ? Number(process.env.GARUD_MEMORY_DEDUP_THRESHOLD)
       : 0
   },
+  commands: { enabled: process.env.GARUD_COMMANDS !== '0' },
+  dmPolicy: {
+    defaultPolicy: (process.env.GARUD_DM_POLICY as AppConfig['dmPolicy']['defaultPolicy']) ?? 'open',
+    channels: {},
+    allowlist: {}
+  },
+  routing: { bindings: [] },
+  queue: {
+    mode: (process.env.GARUD_QUEUE_MODE as AppConfig['queue']['mode']) ?? 'queue',
+    maxDepth: Number(process.env.GARUD_QUEUE_MAX_DEPTH ?? 8)
+  },
   plugins: [],
   skillsDir: process.env.GARUD_SKILLS_DIR,
   hotReload: process.env.GARUD_HOT_RELOAD === '1'
@@ -124,6 +135,10 @@ export function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppC
     conversation: { ...base.conversation, ...(override.conversation ?? {}) },
     quotas: { ...base.quotas, ...(override.quotas ?? {}) },
     memory: { ...base.memory, ...(override.memory ?? {}) },
+    commands: { ...base.commands, ...(override.commands ?? {}) },
+    dmPolicy: { ...base.dmPolicy, ...(override.dmPolicy ?? {}) },
+    routing: { ...base.routing, ...(override.routing ?? {}) },
+    queue: { ...base.queue, ...(override.queue ?? {}) },
     plugins: override.plugins ?? base.plugins
   };
 }
@@ -189,6 +204,25 @@ export function validateConfig(config: AppConfig): ConfigValidationIssue[] {
   }
   if (config.quotas.defaultDailyLimit < 0) {
     issues.push({ path: 'quotas.defaultDailyLimit', message: 'must be >= 0' });
+  }
+  const dmModes = ['open', 'pairing', 'allowlist', 'disabled'];
+  if (!dmModes.includes(config.dmPolicy.defaultPolicy)) {
+    issues.push({ path: 'dmPolicy.defaultPolicy', message: `must be one of ${dmModes.join(', ')}` });
+  }
+  for (const [ch, mode] of Object.entries(config.dmPolicy.channels ?? {})) {
+    if (!dmModes.includes(mode)) {
+      issues.push({ path: `dmPolicy.channels.${ch}`, message: `must be one of ${dmModes.join(', ')}` });
+    }
+  }
+  const queueModes = ['queue', 'steer', 'reject', 'off'];
+  if (!queueModes.includes(config.queue.mode)) {
+    issues.push({ path: 'queue.mode', message: `must be one of ${queueModes.join(', ')}` });
+  }
+  if (config.queue.maxDepth < 1) {
+    issues.push({ path: 'queue.maxDepth', message: 'must be >= 1' });
+  }
+  for (const [i, b] of (config.routing.bindings ?? []).entries()) {
+    if (!b.agentId) issues.push({ path: `routing.bindings[${i}].agentId`, message: 'agentId required' });
   }
   return issues;
 }

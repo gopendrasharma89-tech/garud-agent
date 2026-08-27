@@ -5,6 +5,16 @@
 export type TrustLevel = 'owner' | 'trusted' | 'guest' | 'blocked';
 export type SessionRole = 'main' | 'channel' | 'automation' | 'system';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type DmPolicyMode = 'open' | 'pairing' | 'allowlist' | 'disabled';
+export type QueueMode = 'queue' | 'steer' | 'reject' | 'off';
+
+/** Routes (channel, user) pairs to a named agent. */
+export interface AgentBinding {
+  agentId: string;
+  channel?: string;
+  userId?: string;
+  userPrefix?: string;
+}
 
 export interface IncomingMessage {
   channel: string;
@@ -234,6 +244,14 @@ export interface AppConfig {
     /** Soft duplicate Jaccard threshold; 0 disables dedup on save. */
     dedupThreshold: number;
   };
+  commands: { enabled: boolean };
+  dmPolicy: {
+    defaultPolicy: DmPolicyMode;
+    channels?: Record<string, DmPolicyMode>;
+    allowlist?: Record<string, string[]>;
+  };
+  routing: { bindings: AgentBinding[] };
+  queue: { mode: QueueMode; maxDepth: number };
   plugins: PluginEntry[];
   skillsDir?: string;
   hotReload: boolean;

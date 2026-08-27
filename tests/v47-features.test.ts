@@ -16,7 +16,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('v4.7.0 Cumulonimbus — EmbeddingStore correctness', () => {
+describe('v5.0.0 Talon — EmbeddingStore correctness', () => {
   it('ranks correctly after vocabulary growth (regression: misaligned dense vectors)', async () => {
     const store = new EmbeddingStore();
     await store.add({ id: 'zebra', text: 'zebra stripes roam the savanna plains' });
@@ -67,7 +67,7 @@ describe('v4.7.0 Cumulonimbus — EmbeddingStore correctness', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — hybrid retrieval filter', () => {
+describe('v5.0.0 Talon — hybrid retrieval filter', () => {
   it('hybrid search respects the meta filter across both systems', async () => {
     const hybrid = new HybridRetriever(new BM25Index(), new EmbeddingStore());
     await hybrid.add({ id: '1', text: 'garud agent gateway', meta: { lang: 'ts' } });
@@ -78,7 +78,7 @@ describe('v4.7.0 Cumulonimbus — hybrid retrieval filter', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — HookRunner', () => {
+describe('v5.0.0 Talon — HookRunner', () => {
   it('re-registering after unregister-all does not double-fire (regression)', async () => {
     const bus = new EventBus();
     const runner = new HookRunner(bus);
@@ -92,7 +92,7 @@ describe('v4.7.0 Cumulonimbus — HookRunner', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — heartbeat dailyAt', () => {
+describe('v5.0.0 Talon — heartbeat dailyAt', () => {
   it('fires at the wall-clock time and reschedules day by day', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 2, 8, 0, 0));
@@ -109,7 +109,7 @@ describe('v4.7.0 Cumulonimbus — heartbeat dailyAt', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — LongTermMemory write serialisation', () => {
+describe('v5.0.0 Talon — LongTermMemory write serialisation', () => {
   it('concurrent appends never lose facts or race the temp file', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'garud-ltm-'));
     const file = path.join(dir, 'MEMORY.md');
@@ -125,7 +125,7 @@ describe('v4.7.0 Cumulonimbus — LongTermMemory write serialisation', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — snapshot retention', () => {
+describe('v5.0.0 Talon — snapshot retention', () => {
   it('pruneSnapshots keeps the newest N', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'garud-store-'));
     const store = new JsonFileStore(dir);
@@ -155,7 +155,7 @@ describe('v4.7.0 Cumulonimbus — snapshot retention', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — cost budgets', () => {
+describe('v5.0.0 Talon — cost budgets', () => {
   it('flags exceeded limits against the global budget', () => {
     const tracker = new CostTracker();
     tracker.setPriceTable({ inputPer1K: 0.01, outputPer1K: 0.03, perToolCall: 0.001 });
@@ -182,11 +182,11 @@ describe('v4.7.0 Cumulonimbus — cost budgets', () => {
   });
 });
 
-describe('v4.7.0 Cumulonimbus — version', () => {
-  it('reports 4.7.0 Cumulonimbus', async () => {
+describe('v5.0.0 Talon — version', () => {
+  it('reports 5.0.0 Talon', async () => {
     const v = await import('../src/version.js');
     const s = JSON.stringify(v);
-    expect(s).toContain('4.7.0');
-    expect(s).toContain('Cumulonimbus');
+    expect(s).toContain('5.0.0');
+    expect(s).toContain('Talon');
   });
 });

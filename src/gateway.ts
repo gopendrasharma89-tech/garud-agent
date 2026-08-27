@@ -15,6 +15,10 @@ import { JsonFileStore } from './storage/json-store.js';
 import { AgentReply, ChannelAdapter, IncomingMessage, Logger, TrustLevel } from './types.js';
 import { noopLogger } from './utils/logger.js';
 import { newRequestId } from './utils/request-id.js';
+import { AgentRouter } from './gateway/agent-router.js';
+import { ChatCommandRouter } from './gateway/chat-commands.js';
+import { DmPolicyEngine } from './gateway/dm-policy.js';
+import { QueueBusyError, QueueSupersededError, SessionQueue } from './gateway/session-queue.js';
 
 interface GatewayEvents {
   received: IncomingMessage;
@@ -24,6 +28,10 @@ interface GatewayEvents {
   pairingIssued: { code: string; channel: string; userId: string };
   pairingRedeemed: { channel: string; userId: string; trustLevel: TrustLevel };
   shutdown: { reason: string };
+  dmBlocked: { channel: string; userId: string; reason: string };
+  pairingRequested: { channel: string; userId: string; code: string };
+  commandHandled: { sessionId: string; command: string };
+  superseded: { sessionId: string; requestId: string };
 }
 
 export interface GatewayDeps {
@@ -77,6 +85,10 @@ export class Gateway {
   private readonly autoPersist: boolean;
   private readonly seenClientIds = new Map<string, number>();
   private stats = { handled: 0, rateLimited: 0, duplicates: 0, errors: 0 };
+  private commandRouter?: ChatCommandRouter;
+  private dmPolicy?: DmPolicyEngine;
+  private agentRouter?: AgentRouter;
+  private queue?: SessionQueue;
 
   constructor(private readonly runtime: AgentRuntime, deps: GatewayDeps = {}) {
     this.sessions = deps.sessions ?? new SessionStore();
@@ -113,6 +125,14 @@ export class Gateway {
     this.metrics.histogram('garud_turn_duration_ms', 'Latency of agent turns in ms',
       [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]);
   }
+
+  // ===== v5.0 Talon: OpenClaw-parity control plane =====
+  setCommandRouter(router: ChatCommandRouter): void { this.commandRouter = router; }
+  setDmPolicy(policy: DmPolicyEngine): void { this.dmPolicy = policy; }
+  setAgentRouter(router: AgentRouter): void { this.agentRouter = router; }
+  setSessionQueue(queue: SessionQueue): void { this.queue = queue; }
+  getCommandRouter(): ChatCommandRouter | undefined { return this.commandRouter; }
+  getDmPolicy(): DmPolicyEngine | undefined { return this.dmPolicy; }
 
   getRuntime(): AgentRuntime { return this.runtime; }
 
@@ -248,6 +268,11 @@ export class Gateway {
       return { reply: fallback, duplicate: true, requestId };
     }
 
+    if (this.agentRouter && !message.agentId) {
+      const routed = this.agentRouter.resolve(message);
+      if (routed) message = { ...message, agentId: routed };
+    }
+
     const channel = this.channels.get(message.channel);
     if (!channel && !options.noDeliver) {
       this.stats.errors += 1;
@@ -256,6 +281,55 @@ export class Gateway {
     }
 
     const session = this.sessions.getOrCreate(message);
+
+    if (this.dmPolicy) {
+      const verdict = this.dmPolicy.evaluate(session, message);
+      if (verdict.action === 'pair') {
+        // Let strangers complete pairing in-channel: /pair <code> passes through.
+        if (this.commandRouter && /^\/pair\b/i.test(message.text.trim())) {
+          const pairReply = await this.commandRouter.execute(message.text, { session, gateway: this, requestId });
+          if (pairReply) {
+            if (channel && !options.noDeliver) await channel.deliver(session, pairReply);
+            return { reply: { ...pairReply, requestId }, requestId };
+          }
+        }
+        const issued = this.issuePairing(message.channel, message.userId, verdict.trustLevel ?? 'trusted');
+        const reply: AgentReply = {
+          text: issued
+            ? `pairing required — share this code with the owner to get access: ${issued.code}`
+              + ` (owner approves with: garud pairing approve --code ${issued.code}, or reply /pair ${issued.code} once approved elsewhere)`
+            : 'pairing required — but pairing is disabled on this gateway; contact the owner',
+          notes: ['dm-policy:pairing'], usedTools: [], usedMemories: [], requestId
+        };
+        if (issued) {
+          this.events.emit('pairingRequested', { channel: message.channel, userId: message.userId, code: issued.code });
+        }
+        await this.safeAudit('pairing', { action: 'requested', channel: message.channel, userId: message.userId }, session.id, requestId);
+        if (channel && !options.noDeliver) await channel.deliver(session, reply);
+        return { reply, requestId };
+      }
+      if (verdict.action === 'block') {
+        this.events.emit('dmBlocked', { channel: message.channel, userId: message.userId, reason: verdict.reason ?? 'blocked' });
+        await this.safeAudit('system', { dmBlocked: true, reason: verdict.reason ?? 'blocked' }, session.id, requestId);
+        const reply: AgentReply = {
+          text: `access denied: ${verdict.reason ?? 'this channel is closed'}`,
+          notes: ['dm-policy:blocked'], usedTools: [], usedMemories: [], requestId
+        };
+        if (channel && !options.noDeliver) await channel.deliver(session, reply);
+        return { reply, requestId };
+      }
+    }
+
+    if (this.commandRouter && this.commandRouter.matches(message.text)) {
+      const commandReply = await this.commandRouter.execute(message.text, { session, gateway: this, requestId });
+      if (commandReply) {
+        this.events.emit('commandHandled', { sessionId: session.id, command: message.text.trim().split(/\s+/)[0]! });
+        await this.safeAudit('system', { command: message.text.slice(0, 80) }, session.id, requestId);
+        if (channel && !options.noDeliver) await channel.deliver(session, commandReply);
+        return { reply: { ...commandReply, requestId }, requestId };
+      }
+    }
+
     let rateLimit: RateLimitResult | undefined;
 
     if (this.rateLimiter) {
@@ -287,8 +361,25 @@ export class Gateway {
     const startedAt = Date.now();
     let reply: AgentReply;
     try {
-      reply = await this.runtime.reply(session, message.text, options.signal, requestId);
+      const exec = (): Promise<AgentReply> => this.runtime.reply(session, message.text, options.signal, requestId);
+      reply = this.queue ? await this.queue.run(session.id, exec) : await exec();
     } catch (error) {
+      if (error instanceof QueueSupersededError) {
+        this.events.emit('superseded', { sessionId: session.id, requestId });
+        const supersededReply: AgentReply = {
+          text: 'superseded: a newer message replaced this one before it ran',
+          notes: ['queue:superseded'], usedTools: [], usedMemories: [], requestId
+        };
+        return { reply: supersededReply, requestId };
+      }
+      if (error instanceof QueueBusyError) {
+        const busyReply: AgentReply = {
+          text: 'busy: too many queued messages for this session — try again shortly',
+          notes: ['queue:busy'], usedTools: [], usedMemories: [], requestId
+        };
+        if (channel && !options.noDeliver) await channel.deliver(session, busyReply);
+        return { reply: busyReply, requestId };
+      }
       this.stats.errors += 1;
       this.metrics?.inc('garud_messages_failed_total');
       const errMsg = error instanceof Error ? error.message : String(error);

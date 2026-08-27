@@ -8,7 +8,7 @@ import { TrustLevel } from '../types.js';
 import { GARUD_VERSION } from '../version.js';
 import { mascot } from '../mascot.js';
 
-const HELP = `Garud Agent CLI v3.0
+const HELP = `Garud Agent CLI v5.0
 
 Usage:
   garud chat   [--user <id>] [--trust <level>] [--agent <id>] <text...>
@@ -29,6 +29,9 @@ Usage:
   garud pair   issue --channel <name> --user <id> --level <trust>
   garud pair   redeem --code <code>
   garud pair   revoke --channel <name> --user <id>
+  garud onboard [--dir <path>] [--name <agent>] [--persona <text>] [--force]
+  garud status
+  garud pairing list | approve --code <code>
   garud snapshot [--name <label>] [--gzip]
   garud restore  --name <label>
   garud export   [--out <file>]
@@ -50,7 +53,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const command = args[0] ?? 'help';
   const flags: Record<string, string> = {};
   const positional: string[] = [];
-  const compoundCommands = ['pair', 'config', 'cache', 'memories', 'quotas'];
+  const compoundCommands = ['pair', 'pairing', 'config', 'cache', 'memories', 'quotas'];
   const isCompound = compoundCommands.includes(command);
   const subRaw = isCompound ? args[1] : undefined;
   const sub = subRaw && !subRaw.startsWith('--') ? subRaw : undefined;
@@ -88,6 +91,25 @@ async function main(): Promise<void> {
   }
   if (args.command === 'version') {
     process.stdout.write(`garud-agent ${GARUD_VERSION}\n`);
+    return;
+  }
+  if (args.command === 'onboard') {
+    const { runOnboarding } = await import('../onboard/onboarding.js');
+    const result = await runOnboarding({
+      dir: args.flags.dir ?? config.storage.workspaceDir,
+      name: args.flags.name,
+      persona: args.flags.persona,
+      force: args.flags.force === 'true'
+    });
+    process.stdout.write(mascot() + '\n');
+    process.stdout.write(`workspace: ${result.dir}\n`);
+    for (const f of result.created) process.stdout.write(`  created ${f}\n`);
+    for (const f of result.skipped) process.stdout.write(`  kept    ${f} (already present)\n`);
+    process.stdout.write('\nnext steps:\n');
+    process.stdout.write('  1. review garud.json (dmPolicy defaults to "pairing" — strangers need approval)\n');
+    process.stdout.write('  2. start the gateway:  npm run dev\n');
+    process.stdout.write('  3. open the dashboard: http://127.0.0.1:3010/  (webchat at /webchat)\n');
+    process.stdout.write('  4. approve new users:  garud pairing approve --code <code>\n');
     return;
   }
   if (args.command === 'config') {
@@ -453,6 +475,42 @@ async function main(): Promise<void> {
         process.stdout.write(`revoked ${removed} code(s)\n`);
       } else {
         process.stderr.write('pair requires sub-command: issue | redeem | revoke\n');
+        process.exit(2);
+      }
+      break;
+    }
+
+    case 'status': {
+      const stats = gateway.getStats();
+      process.stdout.write(JSON.stringify({
+        version: GARUD_VERSION,
+        agent: config.agent.name,
+        brain: gateway.getRuntime().getBrainName(),
+        channels: [...gateway.channels.keys()],
+        dmPolicy: gateway.getDmPolicy()?.describe() ?? 'off',
+        commands: config.commands.enabled,
+        queue: config.queue.mode,
+        bindings: config.routing.bindings.length,
+        stats
+      }, null, 2) + '\n');
+      break;
+    }
+
+    case 'pairing': {
+      if (args.sub === 'list') {
+        const list = gateway.pairing?.list() ?? [];
+        if (!list.length) { process.stdout.write('no pending pairing codes\n'); break; }
+        for (const r of list) {
+          process.stdout.write(`${r.code}  ${r.channel}/${r.userId}  -> ${r.trustLevel}  expires ${new Date(r.expiresAt).toISOString()}\n`);
+        }
+      } else if (args.sub === 'approve') {
+        const code = args.flags.code;
+        if (!code) { process.stderr.write('pairing approve requires --code\n'); process.exit(2); }
+        const result = gateway.redeemPairing(code);
+        if (!result.ok) { process.stderr.write('invalid or expired code\n'); process.exit(3); }
+        process.stdout.write(`approved: ${result.channel}/${result.userId} -> ${result.trustLevel}\n`);
+      } else {
+        process.stderr.write('pairing requires sub-command: list | approve\n');
         process.exit(2);
       }
       break;

@@ -8,7 +8,7 @@ import { DurableWorkflowRunner } from '../src/workflow/durable-workflow.js';
 let tmp: string;
 beforeEach(async () => { tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'garud-v40-')); });
 
-describe('v4.0 Cumulonimbus subsystems', () => {
+describe('v4.0 Talon subsystems', () => {
   describe('CodeRunner (sandboxed JS)', () => {
     it('returns disabled error when GARUD_CODE_SANDBOX is off', async () => {
       const cr = new CodeRunner({ enabled: false });

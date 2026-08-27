@@ -14,6 +14,10 @@ import { RateLimiter } from './core/rate-limiter.js';
 import { SessionStore } from './core/session-store.js';
 import { ToolRegistry } from './core/tool-registry.js';
 import { Gateway } from './gateway.js';
+import { AgentRouter } from './gateway/agent-router.js';
+import { buildDefaultChatCommands, ChatCommandRouter } from './gateway/chat-commands.js';
+import { DmPolicyEngine } from './gateway/dm-policy.js';
+import { SessionQueue } from './gateway/session-queue.js';
 import { MetricsRegistry } from './metrics/registry.js';
 import { PluginLoader } from './plugins/plugin-loader.js';
 import { ToolQuotaManager } from './quotas/tool-quota.js';
@@ -307,6 +311,24 @@ export async function bootstrap(config: AppConfig): Promise<BootstrapResult> {
   });
 
   if (store) await gateway.loadFromDisk();
+
+  // ===== v5.0 Talon: OpenClaw-parity gateway plane =====
+  if (config.routing.bindings.length > 0) {
+    gateway.setAgentRouter(new AgentRouter(config.routing.bindings, config.agent.defaultId));
+  }
+  gateway.setDmPolicy(new DmPolicyEngine({
+    defaultPolicy: config.dmPolicy.defaultPolicy,
+    channels: config.dmPolicy.channels,
+    allowlist: config.dmPolicy.allowlist
+  }));
+  if (config.commands.enabled) {
+    const commandRouter = new ChatCommandRouter();
+    buildDefaultChatCommands(commandRouter, { conversation });
+    gateway.setCommandRouter(commandRouter);
+  }
+  if (config.queue.mode !== 'off') {
+    gateway.setSessionQueue(new SessionQueue({ mode: config.queue.mode, maxDepth: config.queue.maxDepth }));
+  }
 
   // Hook runner wired to the gateway event bus.
   const hooks = new HookRunner(

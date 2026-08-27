@@ -1,5 +1,48 @@
 # Changelog
 
+## [5.0.0] — 2026-08-15 — "Talon"
+
+Full OpenClaw-parity release: the gateway now has the complete chat-native
+control plane — slash commands, DM pairing security, multi-agent routing,
+queue modes, a real Telegram connector, onboarding, and WebChat.
+
+### Added
+- **Chat commands on every channel** (`src/gateway/chat-commands.ts`): `/help`,
+  `/status`, `/whoami`, `/version`, `/new` (clears history), `/compact`
+  (keeps 2 most recent turns), `/pair <code>`. Deterministic, brain-free, and
+  extensible via `ChatCommandRouter.register()`. Disable with `GARUD_COMMANDS=0`.
+- **DM policy gate** (`src/gateway/dm-policy.ts`): per-channel
+  `open | pairing | allowlist | disabled` (`dmPolicy` config, `GARUD_DM_POLICY`).
+  In `pairing` mode strangers get a one-time code; the owner approves with
+  `garud pairing approve --code <code>` (or the user redeems via `/pair` after
+  out-of-band approval). Emits `dmBlocked` / `pairingRequested` events and
+  audits every decision.
+- **Multi-agent routing** (`src/gateway/agent-router.ts`): `routing.bindings`
+  map channel/user/user-prefix to named agents; most-specific match wins
+  (userId > channel > prefix).
+- **Session queue modes** (`src/gateway/session-queue.ts`): per-session serial
+  execution with `queue` (FIFO, bounded), `steer` (newer message supersedes
+  pending ones), `reject`, or `off` — `GARUD_QUEUE_MODE`, `GARUD_QUEUE_MAX_DEPTH`.
+  Superseded turns return `queue:superseded` notes; full lanes return `queue:busy`.
+- **Telegram long-poll connector** (`src/channels/pollers/telegram-poller.ts`):
+  `TelegramPoller` + `HttpTelegramTransport` — live Telegram without a public
+  webhook URL, offset tracking, per-user chat mapping, 4096-char chunked
+  delivery, error backoff, injectable transport for tests.
+- **Onboarding wizard** (`garud onboard`, `src/onboard/onboarding.ts`): seeds
+  `garud.json` (dmPolicy `pairing` by default), `SOUL.md`, `IDENTITY.md`,
+  `AGENTS.md`, `USER.md`, `HEARTBEAT.md`, `MEMORY.md`, `skills/`, `logs/` —
+  never overwrites without `--force`.
+- **WebChat** (`GET /webchat`): single-file dark-mode chat UI wired to the
+  webhook channel, with token support and a `/new` quick action.
+- **CLI**: `garud status` (gateway + policy overview), `garud pairing list`,
+  `garud pairing approve --code <code>`.
+
+### Changed
+- Messages starting with `/` are now intercepted as commands when
+  `commands.enabled` (default on) instead of reaching the brain.
+- `bootstrap()` wires the DM policy, command router, agent router, and session
+  queue automatically from config.
+
 ## [4.7.0] - 2026-08-02 "Cumulonimbus"
 
 ### Added
