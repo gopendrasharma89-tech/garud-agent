@@ -1,7 +1,7 @@
 # 🦅 Garud Agent
 
 [![CI](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/gopendrasharma89-tech/garud-agent/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-67%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
+[![Tests](https://img.shields.io/badge/tests-802%20passing-brightgreen)](https://github.com/gopendrasharma89-tech/garud-agent/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
@@ -133,7 +133,7 @@ GARUD_LLM_PLANNING=1 garud serve
 - 🧾 **Full audit log** with replay endpoint
 - ⏰ **Cron-style scheduler** for recurring messages
 - 🦅 **Mascot** — `garud mascot` shows the Skyforge falcon
-- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **67 tests** in ~20 s
+- 🪶 **Zero runtime dependencies**, **strict TypeScript**, **802 tests** in ~20 s
 - 🔌 **Per-tool circuit breakers** — repeatedly failing tools are auto-isolated until a cooldown passes (opt-in)
 
 ## 🚀 Quick start
@@ -188,11 +188,11 @@ npm run cli repl            # interactive REPL
 |---|---|
 | Source files | 83 |
 | Test files | 59 |
-| Lines of TypeScript | 21,67 |
+| Lines of TypeScript | 16101 |
 | Built-in tools | 187 |
 | HTTP endpoints | ~89 |
 | Test suites | 59 |
-| Tests | 67 (all passing) |
+| Tests | 802 (all passing) |
 | Test runtime | ~17 s |
 | Runtime dependencies | 0 |
 
